@@ -12,6 +12,9 @@ Environment Variables:
 
 import os
 import json
+from dotenv import load_dotenv
+
+load_dotenv()  # reads backend/.env automatically
 import re
 import numpy as np
 from collections import Counter
@@ -24,7 +27,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-from langchain.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
 from nltk.stem import WordNetLemmatizer
 import nltk
 
@@ -220,9 +223,9 @@ def generate_answer(question: str, hits: list) -> str:
         f"[QUESTION]\n{question}\n\n"
         "Answer:"
     )
-    response = llm.predict(prompt).strip()
+    response = llm.invoke(prompt).content.strip()
     if response.startswith("I'm sorry, I don't have enough information"):
-        response = llm_fallback.predict(prompt).strip()
+        response = llm_fallback.invoke(prompt).content.strip()
     return response
 
 
