@@ -25,10 +25,49 @@ import numpy as np
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from google import genai
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel
 from rank_bm25 import BM25Okapi
 from sentence_transformers import SentenceTransformer, CrossEncoder
+
+# ---------------------------------------------------------------------------
+# Embedding model selection via env var: "gemini" or "minilm" (default)
+# ---------------------------------------------------------------------------
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "minilm").lower()
+
+
+class GoogleEmbedderWrapper:
+    """Wraps Google Gemini Embedding API to match SentenceTransformer.encode() interface."""
+
+    def __init__(self, model_name: str = "gemini-embedding-001", batch_size: int = 100):
+        self.model_name = model_name
+        self.batch_size = batch_size
+        self._client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+
+    def encode(
+        self,
+        texts,
+        normalize_embeddings: bool = True,
+        batch_size: int | None = None,
+        show_progress_bar: bool = False,
+    ) -> np.ndarray:
+        if isinstance(texts, str):
+            texts = [texts]
+        bs = batch_size or self.batch_size
+        all_embeddings: list[list[float]] = []
+        for i in range(0, len(texts), bs):
+            batch = texts[i : i + bs]
+            result = self._client.models.embed_content(
+                model=self.model_name, contents=batch
+            )
+            all_embeddings.extend([e.values for e in result.embeddings])
+        vecs = np.array(all_embeddings, dtype="float32")
+        if normalize_embeddings:
+            norms = np.linalg.norm(vecs, axis=1, keepdims=True)
+            norms[norms == 0] = 1
+            vecs /= norms
+        return vecs
 
 # ---------------------------------------------------------------------------
 # Global state (loaded once on startup)
@@ -48,8 +87,12 @@ llm = None
 async def lifespan(app: FastAPI):
     global embedder, cross_encoder, chunk_records, faiss_index, bm25, llm
 
-    print("Loading embedding model...")
-    embedder = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    if EMBEDDING_MODEL == "gemini":
+        print("Loading embedding model: Gemini-Embed-001 (API)...")
+        embedder = GoogleEmbedderWrapper()
+    else:
+        print("Loading embedding model: MiniLM-L6-v2 (local)...")
+        embedder = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
     print("Loading cross-encoder...")
     cross_encoder = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
@@ -58,14 +101,21 @@ async def lifespan(app: FastAPI):
     with open("chunked_documents.json", "r", encoding="utf-8") as f:
         chunk_records = json.load(f)
 
-    print("Building FAISS index...")
-    vecs = np.load("embeddings.npy").astype("float32")
-    norms = np.linalg.norm(vecs, axis=1, keepdims=True)
-    norms[norms == 0] = 1
-    vecs /= norms
-    faiss_index = faiss.IndexFlatIP(vecs.shape[1])
-    faiss_index.add(vecs)
-    del vecs
+    emb_file = "embeddings_gemini.npy" if EMBEDDING_MODEL == "gemini" else "embeddings.npy"
+    idx_file = "uchicago_ads_faiss_gemini.index" if EMBEDDING_MODEL == "gemini" else "uchicago_ads_faiss.index"
+
+    if os.path.exists(idx_file):
+        print(f"Loading pre-built FAISS index: {idx_file}")
+        faiss_index = faiss.read_index(idx_file)
+    else:
+        print(f"Building FAISS index from {emb_file}...")
+        vecs = np.load(emb_file).astype("float32")
+        norms = np.linalg.norm(vecs, axis=1, keepdims=True)
+        norms[norms == 0] = 1
+        vecs /= norms
+        faiss_index = faiss.IndexFlatIP(vecs.shape[1])
+        faiss_index.add(vecs)
+        del vecs
 
     print("Building BM25 index...")
     tokenized = [c["text"].lower().split() for c in chunk_records]
@@ -79,7 +129,7 @@ async def lifespan(app: FastAPI):
         google_api_key=os.getenv("GOOGLE_API_KEY", ""),
     )
 
-    print("✅ All resources loaded. Server ready.")
+    print(f"✅ All resources loaded. Embedding={EMBEDDING_MODEL}. Server ready.")
     yield
     print("Shutting down...")
 
