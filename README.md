@@ -5,10 +5,56 @@ A RAG-based Q&A system for the University of Chicago's MS in Applied Data Scienc
 **Live Demo:** https://uchicago-ads-rag.web.app
 <img width="1512" height="860" alt="image" src="https://github.com/user-attachments/assets/176099db-dc1e-4562-9a4f-a6b28ffdfe36" />
 
+## How It Works
+
+The system is built as a full RAG pipeline with two phases:
+
+**Offline Pipeline** — Run once (or when the source website changes) to prepare the knowledge base:
+1. **Web Scraping** — Crawl 147 pages from the UChicago ADS website, preserving HTML structure
+2. **Multi-granularity Chunking** — Split pages into 1,342 chunks using structure-aware extractors: accordion items are split by quarter/course/FAQ/job; generic pages use recursive character splitting (800 chars, 150 overlap). Each chunk carries metadata (source URL, heading, chunk type, labels)
+3. **Embedding & Indexing** — Encode all chunks with a sentence embedding model (MiniLM-L6 or Gemini-Embed-001) and build a FAISS inner-product index. A BM25 index is built in parallel for lexical matching
+
+**Online Serving** — For each user query:
+1. **Query Translation** — Non-English queries (detected by character encoding) are translated to English with domain context, since BM25 and the cross-encoder are English-only
+2. **Hybrid Retrieval** — BM25 and FAISS scores are fused via Reciprocal Rank Fusion (k=60), with heading-overlap boosting and per-URL deduplication
+3. **Cross-Encoder Reranking** — Top candidates are re-scored with `ms-marco-MiniLM-L-6-v2` for precision
+4. **Prompt Construction** — Retrieved chunks are labeled [Doc1], [Doc2], etc. The prompt instructs the LLM to cite sources and respond in the user's language
+5. **Streaming Generation** — Gemini LLM generates a token-by-token streamed response via SSE
+6. **Citation Filtering** — Only source links actually cited by the LLM are returned; "I don't know" answers suppress all links
+
 ## Architecture
 
-- **Backend** — FastAPI server with hybrid retrieval (BM25 + FAISS semantic search), cross-encoder reranking, and Gemini LLM streaming
-- **Frontend** — React + Vite + Tailwind chat interface
+```mermaid
+graph LR
+  subgraph offline ["Offline Pipeline"]
+    direction TB
+    A["Web Scraping\n(147 pages)"] --> B["Multi-granularity\nChunking\n(1,342 chunks)"]
+    B --> C["Embedding\n(MiniLM / Gemini)"]
+    C --> D["FAISS Index"]
+    B --> E["BM25 Index"]
+  end
+
+  subgraph online ["Online Serving"]
+    direction TB
+    Q["User Query"] --> T{"Non-English?"}
+    T -- Yes --> TR["LLM Translation\n(with domain context)"]
+    T -- No --> R
+    TR --> R["Hybrid Retrieval\nBM25 + FAISS\n(RRF k=60)"]
+    D -.-> R
+    E -.-> R
+    R --> RR["Cross-Encoder\nReranking"]
+    RR --> P["Prompt\nConstruction"]
+    P --> L["Gemini LLM\n(Streaming)"]
+    L --> CI["Citation Parsing\n+ Source Filtering"]
+    CI --> AN["Answer + Sources"]
+  end
+
+  style offline fill:#e8f0fe,stroke:#4a9eed,stroke-width:2px
+  style online fill:#e6f4ea,stroke:#22c55e,stroke-width:2px
+```
+
+- **Backend** — FastAPI server (`main.py` + modular `embedder.py`, `retrieval.py`, `prompt.py`)
+- **Frontend** — React + Vite + Tailwind chat interface with real-time streaming
 
 ## Project Structure
 
@@ -21,9 +67,19 @@ backend/
   requirements.txt
   Dockerfile           # Backend container (Cloud Run)
   .env.example         # Environment variable template
-  data/                # Chunked documents, embeddings, FAISS indices
-  notebooks/           # Jupyter notebooks (scraping, chunking, evaluation)
-  scripts/             # Index-building scripts
+  data/
+    chunked_documents.json          # 1,342 chunks with metadata
+    embeddings.npy                  # MiniLM embeddings (1342 x 384)
+    embeddings_gemini.npy           # Gemini embeddings (1342 x 768)
+    uchicago_ads_faiss.index        # FAISS index (MiniLM)
+    uchicago_ads_faiss_gemini.index # FAISS index (Gemini)
+    uchicago_ads_pages_depth3.json  # Raw crawled pages (147 pages)
+  notebooks/
+    rag_pipeline.ipynb              # End-to-end pipeline: scraping, chunking, indexing
+    test_chunking.ipynb             # Validates multi-granularity chunking across page types
+    embedding_comparison.ipynb      # Compares MiniLM vs Gemini embedding quality
+  scripts/
+    build_gemini_index.py           # Standalone script to rebuild Gemini FAISS index
 
 frontend/
   src/
