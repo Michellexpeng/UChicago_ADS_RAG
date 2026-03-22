@@ -4,21 +4,7 @@ import ChatMessage, { Message } from './components/ChatMessage'
 import SampleQuestions from './components/SampleQuestions'
 import ChatInput from './components/ChatInput'
 
-// ─── Config ──────────────────────────────────────────────────────────────────
-// Set VITE_API_URL in a .env file in the project root, e.g.:
-//   VITE_API_URL=http://localhost:8000
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
-// ─────────────────────────────────────────────────────────────────────────────
-
-async function queryRAG(question: string): Promise<{ answer: string; sources: string[] }> {
-  const res = await fetch(`${API_BASE}/ask`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question }),
-  })
-  if (!res.ok) throw new Error(`Server error ${res.status}: ${await res.text()}`)
-  return res.json()
-}
 
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([
@@ -29,6 +15,7 @@ export default function App() {
         "Welcome to the UChicago Applied Data Science Q&A Assistant! I'm here to help answer your questions about the Applied Data Science master's program. Feel free to ask about admissions, curriculum, career outcomes, or browse the sample questions on the left.",
       timestamp: new Date(),
       sources: [],
+      references: [],
     },
   ])
   const [isLoading, setIsLoading] = useState(false)
@@ -45,35 +32,75 @@ export default function App() {
       content,
       timestamp: new Date(),
       sources: [],
+      references: [],
     }
     setMessages(prev => [...prev, userMsg])
     setIsLoading(true)
 
+    const assistantId = (Date.now() + 1).toString()
+
     try {
-      const data = await queryRAG(content)
-      setMessages(prev => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: data.answer,
-          timestamp: new Date(),
-          sources: data.sources ?? [],
-        },
-      ])
-    } catch (err) {
-      setMessages(prev => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: `⚠️ Couldn't reach the backend at \`${API_BASE}\`.\n\n${(err as Error).message}`,
-          timestamp: new Date(),
-          sources: [],
-        },
-      ])
-    } finally {
+      const res = await fetch(`${API_BASE}/ask`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: content }),
+      })
+      if (!res.ok) throw new Error(`Server error ${res.status}: ${await res.text()}`)
+
+      // Add empty assistant message — will be filled token by token
+      setMessages(prev => [...prev, {
+        id: assistantId,
+        role: 'assistant',
+        content: '',
+        timestamp: new Date(),
+        sources: [],
+        references: [],
+      }])
       setIsLoading(false)
+
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const payload = line.slice(6).trim()
+          if (payload === '[DONE]') break
+
+          const event = JSON.parse(payload)
+          if (event.type === 'token') {
+            setMessages(prev => prev.map(msg =>
+              msg.id === assistantId
+                ? { ...msg, content: msg.content + event.content }
+                : msg
+            ))
+          } else if (event.type === 'sources') {
+            setMessages(prev => prev.map(msg =>
+              msg.id === assistantId
+                ? { ...msg, sources: event.sources, references: event.references }
+                : msg
+            ))
+          }
+        }
+      }
+    } catch (err) {
+      setIsLoading(false)
+      setMessages(prev => [...prev, {
+        id: assistantId,
+        role: 'assistant',
+        content: `⚠️ Couldn't reach the backend at \`${API_BASE}\`.\n\n${(err as Error).message}`,
+        timestamp: new Date(),
+        sources: [],
+        references: [],
+      }])
     }
   }
 
@@ -108,7 +135,7 @@ export default function App() {
             <ChatMessage key={msg.id} message={msg} />
           ))}
 
-          {/* Typing indicator */}
+          {/* Typing indicator — shown only before first token arrives */}
           {isLoading && (
             <div className="flex items-start gap-3">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#800000]">

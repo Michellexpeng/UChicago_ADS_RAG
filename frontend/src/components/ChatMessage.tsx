@@ -1,4 +1,11 @@
-import { GraduationCap, User, ExternalLink } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import { GraduationCap, User } from 'lucide-react'
+
+export interface SourceReference {
+  url: string
+  title?: string
+  snippet: string
+}
 
 export interface Message {
   id: string
@@ -6,14 +13,31 @@ export interface Message {
   content: string
   timestamp: Date
   sources?: string[]
+  references?: SourceReference[]
 }
 
 function formatTime(d: Date) {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
+function SourceLink({ source }: { source: SourceReference }) {
+  const label = source.title || source.url.split('/').filter(Boolean).pop() || source.url
+
+  return (
+    <a
+      href={source.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="rounded border border-[#800000]/20 bg-[#800000]/5 px-2 py-1 text-xs text-[#800000] hover:bg-[#800000]/10 hover:underline transition-colors"
+    >
+      {label}
+    </a>
+  )
+}
+
 export default function ChatMessage({ message }: { message: Message }) {
   const isUser = message.role === 'user'
+  const refs = message.references ?? []
 
   return (
     <div className={`flex items-start gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
@@ -39,36 +63,24 @@ export default function ChatMessage({ message }: { message: Message }) {
 
         {/* Text */}
         <div
-          className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap
+          className={`rounded-2xl px-4 py-3 text-sm leading-relaxed
             ${isUser
-              ? 'rounded-tr-sm bg-[#800000] text-white'
-              : 'rounded-tl-sm bg-white text-gray-800 shadow-sm border border-gray-100'
+              ? 'rounded-tr-sm bg-[#800000] text-white whitespace-pre-wrap'
+              : 'rounded-tl-sm bg-white text-gray-800 shadow-sm border border-gray-100 prose prose-sm max-w-none'
             }`}
         >
-          {message.content}
+          {isUser
+            ? message.content
+            : <ReactMarkdown>{message.content}</ReactMarkdown>
+          }
         </div>
 
-        {/* Source pills */}
-        {!isUser && message.sources && message.sources.length > 0 && (
-          <div className="mt-1 flex flex-wrap gap-1.5">
-            {message.sources.map(url => {
-              // Show just the last path segment as label
-              const label = url.split('/').filter(Boolean).pop() ?? url
-              return (
-                <a
-                  key={url}
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 rounded-full border border-[#800000]/20
-                    bg-[#800000]/5 px-2.5 py-0.5 text-xs text-[#800000]
-                    hover:bg-[#800000]/10 transition-colors"
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  {label}
-                </a>
-              )
-            })}
+        {/* Source cards */}
+        {!isUser && refs.length > 0 && (
+          <div className="mt-1 flex flex-row flex-wrap gap-1.5">
+            {[...new Map(refs.map(r => [r.title || r.url, r])).values()].map(r => (
+              <SourceLink key={r.title || r.url} source={r} />
+            ))}
           </div>
         )}
       </div>
