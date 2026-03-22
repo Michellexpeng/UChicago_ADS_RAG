@@ -14,5 +14,8 @@ frontend/dist/
 frontend/.env
 frontend/.env.local
 
+# Firebase
+frontend/.firebase/
+
 # OS
 .DS_Store

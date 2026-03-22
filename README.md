@@ -2,6 +2,8 @@
 
 A RAG-based Q&A system for the University of Chicago's MS in Applied Data Science program. Users can ask questions about admissions, curriculum, career outcomes, and more — the system retrieves relevant information from the program website and generates answers using an LLM.
 
+**Live Demo:** https://uchicago-ads-rag.web.app
+
 ## Architecture
 
 - **Backend** — FastAPI server with hybrid retrieval (BM25 + FAISS semantic search), cross-encoder reranking, and Gemini LLM streaming
@@ -16,6 +18,8 @@ backend/
   retrieval.py         # Hybrid retrieval (BM25 + FAISS + RRF) and reranking
   prompt.py            # Prompt construction, query translation, citation parsing
   requirements.txt
+  Dockerfile           # Backend container (Cloud Run)
+  .env.example         # Environment variable template
   data/                # Chunked documents, embeddings, FAISS indices
   notebooks/           # Jupyter notebooks (scraping, chunking, evaluation)
   scripts/             # Index-building scripts
@@ -27,6 +31,11 @@ frontend/
       ChatMessage.tsx  # Message rendering + source links
       ChatInput.tsx    # Text input + send button
       SampleQuestions.tsx  # Sidebar with sample questions
+  Dockerfile           # Frontend container (Nginx, for docker-compose)
+  firebase.json        # Firebase Hosting config
+
+docker-compose.yml     # Local multi-container setup
+deploy.sh              # One-click GCP deployment script
 ```
 
 ## Quick Start
@@ -66,6 +75,7 @@ Open http://localhost:5173
 |----------|----------|---------|-------------|
 | `GOOGLE_API_KEY` | Yes | — | Google AI API key for Gemini LLM and embeddings |
 | `EMBEDDING_MODEL` | No | `minilm` | Embedding model: `minilm` (local) or `gemini` (API) |
+| `ALLOWED_ORIGINS` | No | `*` | Comma-separated CORS origins (e.g., `https://your-domain.web.app`) |
 | `VITE_API_URL` | No | `http://localhost:8000` | Backend URL for the frontend |
 
 ## Key Features
@@ -78,9 +88,26 @@ Open http://localhost:5173
 - **Streaming responses** — real-time token-by-token output via Server-Sent Events
 - **Configurable embeddings** — switch between local MiniLM (384-dim) and Gemini API (768-dim) via environment variable
 
-## Production Build
+## Deployment
+
+The app is deployed on Google Cloud Platform:
+- **Backend** — Cloud Run (containerized FastAPI)
+- **Frontend** — Firebase Hosting (static files + CDN)
+
+### Deploy with Docker (local)
 
 ```bash
-cd frontend
-npm run build   # Output in dist/
+docker-compose up --build
+# Frontend: http://localhost  |  Backend: http://localhost:8000
 ```
+
+### Deploy to GCP
+
+Prerequisites: `gcloud` CLI, Firebase CLI, a GCP project with billing enabled.
+
+```bash
+# One-click deploy
+./deploy.sh
+```
+
+The script builds and deploys the backend to Cloud Run, then builds the frontend and deploys to Firebase Hosting. See `deploy.sh` for details.
