@@ -82,6 +82,12 @@ export default function App() {
                 ? { ...msg, content: msg.content + event.content }
                 : msg
             ))
+          } else if (event.type === 'replace') {
+            setMessages(prev => prev.map(msg =>
+              msg.id === assistantId
+                ? { ...msg, content: event.content }
+                : msg
+            ))
           } else if (event.type === 'sources') {
             setMessages(prev => prev.map(msg =>
               msg.id === assistantId

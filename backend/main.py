@@ -162,6 +162,11 @@ class SourceReference(BaseModel):
 # ---------------------------------------------------------------------------
 # RAG helpers (ported from notebook)
 # ---------------------------------------------------------------------------
+_DONT_KNOW_RE = re.compile(
+    r"(不知道|无法回答|没有.*信息|don'?t know|no information|cannot answer|not sure)",
+    re.IGNORECASE,
+)
+
 _LIST_RE = re.compile(
     r"\b(\d+)\s*(examples?|instances?|cases?|capstones?|projects?|topics?|courses?|ways?|tips?|ideas?)\b"
     r"|\b(list|give me|show me|what are|name)\b",
@@ -337,7 +342,7 @@ def build_prompt(question: str, hits: list) -> str:
         if listing
         else "Answer concisely and directly."
     )
-    context = "\n\n".join(f"[Doc] {h['text']}" for h in hits)
+    context = "\n\n".join(f"[Doc{i+1}] {h['text']}" for i, h in enumerate(hits))
     return (
         "You are a helpful assistant for University of Chicago's MS in Applied Data Science program.\n"
         "Use the provided context below to answer the user question. "
@@ -346,7 +351,10 @@ def build_prompt(question: str, hits: list) -> str:
         "If the context contains relevant information -- even under different terminology -- "
         "treat it as a direct answer and synthesize ALL relevant details. "
         "Only say you don't know if the context is completely unrelated. "
-        "Format your answer in Markdown.\n\n"
+        "Format your answer in Markdown.\n"
+        "At the very end of your answer, on a new line, list ONLY the document labels you "
+        "actually used (e.g. [Doc1][Doc3]). Do not include documents you did not reference. "
+        "If you cannot answer the question from the context, do NOT cite any documents.\n\n"
         f"[CONTEXT]\n{context}\n\n"
         f"[QUESTION]\n{question}\n\n"
         "Answer:"
@@ -368,20 +376,42 @@ async def ask(body: QuestionRequest):
     hits = rerank(body.question, candidates, top_k=rerank_k)
     prompt = build_prompt(body.question, hits)
 
-    seen = set()
-    sources = []
-    references = []
-    for h in hits:
-        if h["url"] not in seen:
+    # Build doc-number → hit mapping for citation parsing
+    doc_map: dict[int, dict] = {i + 1: h for i, h in enumerate(hits)}
+
+    async def stream():
+        full_answer = ""
+        async for chunk in llm.astream(prompt):
+            token = chunk.content
+            if token:
+                full_answer += token
+                yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+
+        # Parse cited doc labels from the answer (e.g. [Doc1], [Doc3])
+        cited_nums = set(int(m) for m in re.findall(r"\[Doc(\d+)\]", full_answer))
+
+        # Build sources from only the cited docs, deduped by URL
+        seen: set[str] = set()
+        sources: list[str] = []
+        references: list[dict] = []
+        for num in sorted(cited_nums):
+            h = doc_map.get(num)
+            if not h or h["url"] in seen:
+                continue
             seen.add(h["url"])
             sources.append(h["url"])
             references.append({"url": h["url"], "title": h.get("page_title", ""), "snippet": h["text"]})
 
-    async def stream():
-        async for chunk in llm.astream(prompt):
-            token = chunk.content
-            if token:
-                yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+        # Strip citation markers from the displayed answer
+        clean_answer = re.sub(r"\s*\[Doc\d+\]", "", full_answer).strip()
+        if clean_answer != full_answer:
+            yield f"data: {json.dumps({'type': 'replace', 'content': clean_answer})}\n\n"
+
+        # Suppress sources for "I don't know" style answers
+        if _DONT_KNOW_RE.search(clean_answer) and len(clean_answer) < 200:
+            sources.clear()
+            references.clear()
+
         yield f"data: {json.dumps({'type': 'sources', 'sources': sources, 'references': references})}\n\n"
         yield "data: [DONE]\n\n"
 
