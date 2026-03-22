@@ -1,9 +1,47 @@
 # UChicago Applied Data Science Q&A
 
+![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
+![Google Cloud](https://img.shields.io/badge/GCP-Cloud_Run-4285F4?logo=googlecloud&logoColor=white)
+![FAISS](https://img.shields.io/badge/FAISS-Semantic_Search-7B61FF)
+![Gemini](https://img.shields.io/badge/Gemini-2.5_Flash_Lite-886FBF?logo=googlegemini&logoColor=white)
+
 A RAG-based Q&A system for the University of Chicago's MS in Applied Data Science program. Users can ask questions about admissions, curriculum, career outcomes, and more — the system retrieves relevant information from the program website and generates answers using an LLM.
 
 **Live Demo:** https://uchicago-ads-rag.web.app
+
 <img width="1512" height="860" alt="image" src="https://github.com/user-attachments/assets/176099db-dc1e-4562-9a4f-a6b28ffdfe36" />
+
+---
+
+## What I Learned Building This
+
+### Chunking matters more than embedding
+
+I evaluated 4 embedding models (MiniLM, BGE-M3, E5-large, Gemini) and the recall gap was only ~5%. What made the real difference was **how I split the documents**. Structure-aware chunking that respects HTML semantics (accordions split by course/quarter/FAQ) consistently outperformed fixed-size splitting. **Parent + child chunking** turned out to be critical — a query like "what courses are in the Machine Learning track?" hits a specific course sub-chunk, while "tell me about the curriculum" matches the parent accordion chunk that covers all tracks. Fixed-size splitting would either miss the detail or lose the overview.
+
+### Retrieval is where precision is won or lost
+
+**Hybrid BM25 + semantic search** with RRF fusion consistently beat either method alone, but the details mattered:
+- **Domain-specific synonym expansion** was a small effort with outsized impact. Mapping "tuition" ↔ "cost/fee/price" and "duration" ↔ "how long/quarters/years" caught queries that semantic search would handle but BM25 would completely miss — and in a hybrid system, a zero BM25 score drags down the fused ranking
+- **Heading-overlap boosting** was a surprisingly effective signal — when a chunk's heading matches the query keywords, it's almost always relevant. I gave structured content (accordions, page-level sections) a 2x boost multiplier, which noticeably improved precision for navigational queries like "what are the core courses?"
+- **Cross-encoder reranking** was the single biggest quality boost for top-5 precision
+- For **Chinese queries**, I discovered that BM25 and the cross-encoder are English-only bottlenecks — adding LLM-based translation *before* retrieval (not after) solved inconsistent results
+
+### Generation: the LLM is the easy part
+
+I migrated from OpenAI GPT to **Gemini 2.5 Flash Lite** expecting a quality tradeoff, but the results were on par — with much better latency and cost. For a domain-specific RAG where the context does most of the heavy lifting, a lighter LLM works just fine.
+
+But **prompt wording directly controls hallucination**. My first prompt said "treat the context as a direct answer," which caused the LLM to confidently fabricate details from partially relevant chunks (e.g., listing wrong instructors for a course). Changing it to "answer what you can and clearly state which part is not covered" struck the right balance — users get useful partial answers without being misled.
+
+I also implemented **citation-based source filtering**: the LLM cites [Doc1], [Doc3] in its answer, and only those sources are shown to the user. This eliminated the "irrelevant links" problem that most RAG demos have.
+
+### Methodology: measure + read the failures
+
+Most of these improvements came from **combining RAGAS metrics with manual error analysis**. Automated evaluation (faithfulness, answer relevancy) told me *where* the system was weak, but only by reading the actual bad answers could I figure out *why* — a wrong synonym, a misleading prompt instruction, or a chunking boundary that split critical information. The iterative loop of "measure → inspect failures → hypothesize → fix → re-measure" was the real methodology behind this project.
+
+---
 
 ## How It Works
 
@@ -56,7 +94,68 @@ graph LR
 - **Backend** — FastAPI server (`main.py` + modular `embedder.py`, `retrieval.py`, `prompt.py`)
 - **Frontend** — React + Vite + Tailwind chat interface with real-time streaming
 
-## Project Structure
+---
+
+## Key Features
+
+| Feature | Description |
+|---------|-------------|
+| Hybrid retrieval | BM25 lexical + FAISS semantic search, fused via Reciprocal Rank Fusion (RRF) |
+| Cross-encoder reranking | Re-scores candidates with `ms-marco-MiniLM-L-6-v2` for higher precision |
+| Synonym expansion | Maps domain terms (e.g., "tuition" ↔ "cost", "fee", "price") for better BM25 recall |
+| Chinese query support | Translates non-English queries to English for retrieval, responds in user's language |
+| Citation-based sources | Only shows source links the LLM actually referenced in its answer |
+| Streaming responses | Real-time token-by-token output via Server-Sent Events |
+| Configurable embeddings | Switch between local MiniLM (384-dim) and Gemini API (768-dim) via env var |
+
+---
+
+## Evaluation
+
+Detailed evaluation notebooks are in [`backend/notebooks/`](backend/notebooks/).
+
+### Embedding Model Comparison
+
+Four embedding models were evaluated on retrieval quality, cross-lingual performance, and end-to-end answer quality (see [`embedding_comparison.ipynb`](backend/notebooks/embedding_comparison.ipynb)):
+
+| Model | Dim | Recall@1 | Recall@5 | Faithfulness | Answer Relevancy | Encode Time |
+|-------|-----|----------|----------|--------------|------------------|-------------|
+| MiniLM-L6 (baseline) | 384 | 0.310 | 0.590 | 0.90 | 0.783 | 2.9s |
+| BGE-M3 | 1024 | 0.330 | 0.630 | **1.00** | 0.759 | 53.3s |
+| E5-large-instruct | 1024 | 0.300 | 0.590 | 0.90 | 0.764 | 45.4s |
+| **Gemini-Embed-001** | 3072 | **0.360** | **0.640** | 0.91 | **0.790** | 14.5s |
+
+- **Recall** measured via pseudo-queries generated from chunk text
+- **Faithfulness** and **Answer Relevancy** measured using [RAGAS](https://docs.ragas.io/) with Gemini 2.5 Flash as the LLM judge
+- **Chinese cross-lingual retrieval**: All models showed ~35-40% score drop on Chinese queries against the English corpus. BGE-M3 performed best cross-lingually, but Gemini produced the most accurate and detailed Chinese answers
+
+**Decision**: Gemini-Embed-001 selected for production — best recall, highest answer relevancy, and superior Chinese answer quality.
+
+### Chunking Validation
+
+Multi-granularity chunking was validated across 4 representative page types (see [`test_chunking.ipynb`](backend/notebooks/test_chunking.ipynb)):
+
+| Page Type | Total Chunks | Strategy |
+|-----------|--------------|----------|
+| Schedule | 22 | 3 parent accordion + 19 quarter sub-chunks |
+| Courses | 33 | 3 parent accordion + 30 course sub-chunks |
+| FAQ | 41 | 5 parent accordion + 36 Q&A sub-chunks |
+| Jobs | 19 | 5 parent accordion + 14 job sub-chunks |
+
+All 8 accordion pages matched dedicated HTML structure selectors with zero fallback triggers, confirming the chunking strategy correctly handles the site's content structure.
+
+### End-to-End RAG Quality
+
+Evaluated on 25 test queries using the full pipeline (see [`rag_pipeline.ipynb`](backend/notebooks/rag_pipeline.ipynb)):
+
+- **Faithfulness**: 0.86 — most answers are grounded in retrieved context
+- **Answer Relevancy**: 0.71 — answers are on-topic with room for improvement on partial-context questions
+- **Retrieval Recall@5**: 0.60 — hybrid BM25+FAISS retrieves the correct chunk in top 5 for 60% of synthetic queries
+
+---
+
+<details>
+<summary><strong>Project Structure</strong></summary>
 
 ```
 backend/
@@ -95,7 +194,10 @@ docker-compose.yml     # Local multi-container setup
 deploy.sh              # One-click GCP deployment script
 ```
 
-## Quick Start
+</details>
+
+<details>
+<summary><strong>Quick Start</strong></summary>
 
 ### Backend
 
@@ -126,7 +228,10 @@ npm run dev
 
 Open http://localhost:5173
 
-## Environment Variables
+</details>
+
+<details>
+<summary><strong>Environment Variables</strong></summary>
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
@@ -135,17 +240,10 @@ Open http://localhost:5173
 | `ALLOWED_ORIGINS` | No | `*` | Comma-separated CORS origins (e.g., `https://your-domain.web.app`) |
 | `VITE_API_URL` | No | `http://localhost:8000` | Backend URL for the frontend |
 
-## Key Features
+</details>
 
-- **Hybrid retrieval** — combines BM25 lexical search with FAISS semantic search using Reciprocal Rank Fusion (RRF)
-- **Cross-encoder reranking** — re-scores candidates with `ms-marco-MiniLM-L-6-v2` for higher precision
-- **Synonym expansion** — maps domain terms (e.g., "tuition" ↔ "cost", "fee", "price") for better BM25 recall
-- **Chinese query support** — automatically translates non-English queries to English for retrieval, responds in the user's language
-- **Citation-based sources** — only shows source links the LLM actually referenced in its answer
-- **Streaming responses** — real-time token-by-token output via Server-Sent Events
-- **Configurable embeddings** — switch between local MiniLM (384-dim) and Gemini API (768-dim) via environment variable
-
-## Deployment
+<details>
+<summary><strong>Deployment</strong></summary>
 
 The app is deployed on Google Cloud Platform:
 - **Backend** — Cloud Run (containerized FastAPI)
@@ -168,3 +266,5 @@ Prerequisites: `gcloud` CLI, Firebase CLI, a GCP project with billing enabled.
 ```
 
 The script builds and deploys the backend to Cloud Run, then builds the frontend and deploys to Firebase Hosting. See `deploy.sh` for details.
+
+</details>
