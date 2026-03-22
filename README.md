@@ -3,6 +3,7 @@
 A RAG-based Q&A system for the University of Chicago's MS in Applied Data Science program. Users can ask questions about admissions, curriculum, career outcomes, and more — the system retrieves relevant information from the program website and generates answers using an LLM.
 
 **Live Demo:** https://uchicago-ads-rag.web.app
+<img width="1512" height="860" alt="image" src="https://github.com/user-attachments/assets/176099db-dc1e-4562-9a4f-a6b28ffdfe36" />
 
 ## Architecture
 
