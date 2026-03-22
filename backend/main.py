@@ -194,6 +194,7 @@ _SYNONYMS = {
     "admission":            ["application", "how to apply", "eligibility", "requirement"],
     "scholarship":          ["financial aid", "funding", "grant", "award"],
     "online":               ["remote", "virtual", "distance"],
+    "duration":             ["how long", "length", "time to complete", "quarters", "years"],
     "deadline":             ["due date", "cutoff"],
     "gpa":                  ["grade", "academic requirement"],
     "visa":                 ["immigration", "sponsorship", "opt", "stem"],
@@ -241,6 +242,25 @@ def expand_query(query: str) -> str:
             else:
                 extra.append(_REVERSE_SYNONYMS[phrase])
     return query + " " + " ".join(extra) if extra else query
+
+
+def _is_pure_ascii(text: str) -> bool:
+    """Return True if all non-space, non-punctuation chars are ASCII."""
+    return all(ord(c) < 128 for c in text if not c.isspace())
+
+
+async def translate_to_english(query: str) -> str:
+    """Translate non-English query to English using the existing LLM.
+
+    English queries (or mixed queries with majority ASCII) pass through unchanged.
+    """
+    if _is_pure_ascii(query):
+        return query
+    response = await llm.ainvoke(
+        "This is a question about UChicago's MS in Applied Data Science program. "
+        f"Translate the following to English. Return ONLY the translation, nothing else.\n\n{query}"
+    )
+    return response.content.strip()
 
 
 def is_dup(a: str, b: str, thresh: float = 0.95) -> bool:
@@ -343,20 +363,30 @@ def build_prompt(question: str, hits: list) -> str:
         else "Answer concisely and directly."
     )
     context = "\n\n".join(f"[Doc{i+1}] {h['text']}" for i, h in enumerate(hits))
+
+    # Detect non-English query and add a strong language instruction near the answer
+    lang_hint = ""
+    if not _is_pure_ascii(question):
+        lang_hint = "请用中文回答。专有名词（如课程名、项目名）保持英文。\n"
+
     return (
         "You are a helpful assistant for University of Chicago's MS in Applied Data Science program.\n"
         "Use the provided context below to answer the user question. "
         f"{instruction} "
         "IMPORTANT: Do NOT start with disclaimers or statements about what the context lacks. "
         "If the context contains relevant information -- even under different terminology -- "
-        "treat it as a direct answer and synthesize ALL relevant details. "
-        "Only say you don't know if the context is completely unrelated. "
+        "synthesize all relevant details. "
+        "If the context only partially addresses the question, answer the part you can "
+        "and clearly state which part is not covered. "
+        "Answer in the same language as the user's question. "
+        "Keep proper nouns, program names, course titles, and academic terms in their original English form. "
         "Format your answer in Markdown.\n"
         "At the very end of your answer, on a new line, list ONLY the document labels you "
         "actually used (e.g. [Doc1][Doc3]). Do not include documents you did not reference. "
         "If you cannot answer the question from the context, do NOT cite any documents.\n\n"
         f"[CONTEXT]\n{context}\n\n"
         f"[QUESTION]\n{question}\n\n"
+        f"{lang_hint}"
         "Answer:"
     )
 
@@ -369,11 +399,15 @@ async def ask(body: QuestionRequest):
     if not body.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
-    listing = is_list_query(body.question)
+    # Translate non-English queries for retrieval (BM25 + cross-encoder need English)
+    en_query = await translate_to_english(body.question)
+
+    listing = is_list_query(en_query)
     retrieve_k = 20 if listing else 10
-    rerank_k = max(5, _requested_count(body.question)) if listing else 5
-    candidates = retrieve(body.question, top_k=retrieve_k)
-    hits = rerank(body.question, candidates, top_k=rerank_k)
+    rerank_k = max(5, _requested_count(en_query)) if listing else 5
+    candidates = retrieve(en_query, top_k=retrieve_k)
+    hits = rerank(en_query, candidates, top_k=rerank_k)
+    # Use original query in prompt so LLM answers in the user's language
     prompt = build_prompt(body.question, hits)
 
     # Build doc-number → hit mapping for citation parsing
