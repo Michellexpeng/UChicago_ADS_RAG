@@ -1,0 +1,16 @@
+{
+  "name": "UChicago ADS Q&A Assistant",
+  "short_name": "ADS Q&A",
+  "description": "Applied Data Science program Q&A powered by RAG",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#800000",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

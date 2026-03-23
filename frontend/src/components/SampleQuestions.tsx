@@ -1,4 +1,4 @@
-import { Lightbulb } from 'lucide-react'
+import { Lightbulb, X } from 'lucide-react'
 
 const CATEGORIES = [
   {
@@ -41,16 +41,22 @@ const CATEGORIES = [
 
 interface Props {
   onQuestionClick: (q: string) => void
+  onClose?: () => void
 }
 
-export default function SampleQuestions({ onQuestionClick }: Props) {
+export default function SampleQuestions({ onQuestionClick, onClose }: Props) {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="shrink-0 border-b border-gray-200 px-4 py-4">
         <div className="flex items-center gap-2">
-          <Lightbulb className="h-4 w-4 text-[#800000]" />
-          <h2 className="font-semibold text-gray-800">Sample Questions</h2>
+          <Lightbulb className="h-4 w-4 text-primary" />
+          <h2 className="flex-1 font-semibold text-gray-800">Sample Questions</h2>
+          {onClose && (
+            <button className="md:hidden rounded-full p-1 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
         <p className="mt-0.5 pl-6 text-xs text-gray-500">Click any question to ask</p>
       </div>
@@ -59,7 +65,7 @@ export default function SampleQuestions({ onQuestionClick }: Props) {
       <div className="flex-1 overflow-y-auto py-2">
         {CATEGORIES.map(cat => (
           <div key={cat.label} className="mb-2">
-            <p className="px-4 py-2 text-[10.5px] font-semibold uppercase tracking-widest text-[#800000]">
+            <p className="px-4 py-2 text-xs font-semibold uppercase tracking-widest text-primary">
               {cat.label}
             </p>
             {cat.questions.map(q => (
@@ -67,8 +73,9 @@ export default function SampleQuestions({ onQuestionClick }: Props) {
                 key={q}
                 onClick={() => onQuestionClick(q)}
                 className="w-full border-l-2 border-transparent px-4 py-2.5 text-left
-                  text-[13px] text-gray-600 transition-all
-                  hover:border-[#800000] hover:bg-[#fdf5f5] hover:text-[#800000]"
+                  text-sm text-gray-600 transition-colors duration-150
+                  hover:border-primary hover:bg-accent hover:text-primary
+                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
               >
                 {q}
               </button>
