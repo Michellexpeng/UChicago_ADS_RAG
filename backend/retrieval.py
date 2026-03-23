@@ -86,6 +86,7 @@ _SYNONYMS = {
     "alumni":               ["graduate", "graduate outcome", "placement"],
     "core courses":         ["required courses", "mandatory classes"],
     "foundational courses": ["before join", "resources before joining", "preparation materials", "pre-course resources"],
+    "python":               ["programming", "coding", "code"],
 }
 
 _REVERSE_SYNONYMS: dict[str, str] = {}
@@ -170,28 +171,27 @@ def retrieve(query: str, chunk_records: list, embedder, bm25, faiss_index,
     Returns top_k candidates for the reranker. No URL cap is applied here
     so that relevant chunks from FAQ-heavy pages are not prematurely dropped.
     """
-    all_idxs = list(range(len(chunk_records)))
+    n_chunks = len(chunk_records)
     q_emb = embedder.encode([query], normalize_embeddings=True)[0].astype("float32")
     bm25_scores = bm25.get_scores(tokenize_for_bm25(expand_query(query)))
 
-    # Semantic scores over all chunks
-    sub_vecs = np.stack([faiss_index.reconstruct(i) for i in all_idxs])
-    sem_scores = sub_vecs @ q_emb.astype("float32")
+    # Semantic ranking via FAISS search (returns all chunks ranked by similarity)
+    _, sem_ranked_idxs = faiss_index.search(q_emb.reshape(1, -1), n_chunks)
+    sem_ranked_idxs = sem_ranked_idxs[0]
 
-    # RRF fusion (k=60)
+    # RRF fusion (k=60) — only needs rank positions, not raw scores
     k = 60
-    sem_ranks = np.argsort(-sem_scores)
     bm25_ranks = np.argsort(-bm25_scores)
-    rrf = np.zeros(len(all_idxs))
-    for rank, rel in enumerate(sem_ranks):
-        rrf[rel] += 1.0 / (k + rank + 1)
-    for rank, rel in enumerate(bm25_ranks):
-        rrf[rel] += 1.0 / (k + rank + 1)
+    rrf = np.zeros(n_chunks)
+    for rank, idx in enumerate(sem_ranked_idxs):
+        rrf[idx] += 1.0 / (k + rank + 1)
+    for rank, idx in enumerate(bm25_ranks):
+        rrf[idx] += 1.0 / (k + rank + 1)
 
     # Heading boost: boost chunks whose heading overlaps with query keywords
     q_tokens = set(re.sub(r"[^a-z0-9\s]", " ", query.lower()).split())
     q_tokens.update(expand_query(query).lower().split())
-    for idx in all_idxs:
+    for idx in range(n_chunks):
         heading = (chunk_records[idx]["metadata"].get("heading") or "").lower()
         if not heading:
             continue
@@ -205,7 +205,7 @@ def retrieve(query: str, chunk_records: list, embedder, bm25, faiss_index,
     # Label boost: boost chunks whose labels match query intent
     query_labels = _detect_query_labels(query)
     if query_labels:
-        for idx in all_idxs:
+        for idx in range(n_chunks):
             chunk_labels = set(chunk_records[idx]["metadata"].get("labels", []))
             if chunk_labels & query_labels:
                 rrf[idx] += 0.03
