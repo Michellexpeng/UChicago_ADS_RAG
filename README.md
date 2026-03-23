@@ -19,15 +19,29 @@ A RAG-based Q&A system for the University of Chicago's MS in Applied Data Scienc
 
 ### Chunking matters more than embedding
 
-I evaluated 4 embedding models (MiniLM, BGE-M3, E5-large, Gemini) and the recall gap was only ~5%. What made the real difference was **how I split the documents**. Structure-aware chunking that respects HTML semantics (accordions split by course/quarter/FAQ) consistently outperformed fixed-size splitting. **Parent + child chunking** turned out to be critical — a query like "what courses are in the Machine Learning track?" hits a specific course sub-chunk, while "tell me about the curriculum" matches the parent accordion chunk that covers all tracks. Fixed-size splitting would either miss the detail or lose the overview.
+I evaluated 4 embedding models (MiniLM, BGE-M3, E5-large, Gemini) and the recall gap was only ~5%. What made the real difference was **how I split the documents**.
+
+My first approach used `RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)` on raw page text. This caused two concrete problems:
+
+1. **Mid-sentence fragmentation** — A biography on the Data Science Clinic page got split mid-paragraph, producing a chunk starting with *"hundreds of students into top data science positions...90% within 3 months of graduation"* — with zero context that this was describing a staff member's previous role at USF, not UChicago's placement rate
+2. **Semantic pollution** — That orphaned chunk contained keywords like "job placement" and "graduation" that made it rank highly for career queries, causing the LLM to confidently attribute USF's 90% placement rate to UChicago ADS
+
+The fix was **context-aware paragraph splitting**: split on `\n\n` first to preserve paragraph boundaries, use sentence-boundary separators (`". "`, `"? "`, `"! "`) for long paragraphs, and prefix every section chunk with `[Page Title]` so the cross-encoder can distinguish "Data Science Clinic staff bio" from "Career Outcomes data." This single change eliminated the hallucination.
+
+Structure-aware chunking for accordion pages (FAQ, Course Progressions, etc.) was equally important — splitting by HTML structure rather than character count kept each Q&A pair and course description as an atomic unit. **Parent + child chunking** turned out to be critical: "what courses are in the Machine Learning track?" hits a specific course sub-chunk, while "tell me about the curriculum" matches the parent accordion chunk covering all tracks.
 
 ### Retrieval is where precision is won or lost
 
 **Hybrid BM25 + semantic search** with RRF fusion consistently beat either method alone, but the details mattered:
+
 - **Domain-specific synonym expansion** was a small effort with outsized impact. Mapping "tuition" ↔ "cost/fee/price" and "duration" ↔ "how long/quarters/years" caught queries that semantic search would handle but BM25 would completely miss — and in a hybrid system, a zero BM25 score drags down the fused ranking
+- **BM25 tokenization quality** — Switching from naive `.lower().split()` to proper tokenization with stopword removal and simple stemming (e.g., "courses" → "course", "studies" → "study") improved BM25 precision significantly. Without stemming, "what courses are available?" wouldn't match chunks containing "course" (singular)
 - **Heading-overlap boosting** was a surprisingly effective signal — when a chunk's heading matches the query keywords, it's almost always relevant. I gave structured content (accordions, page-level sections) a 2x boost multiplier, which noticeably improved precision for navigational queries like "what are the core courses?"
+- **Label-based intent matching** — Each chunk carries topic labels (admission, course, fee, career, etc.) assigned during chunking. When the query's intent matches a chunk's label, it gets a small RRF boost. This acts as a lightweight topic filter that helps surface domain-relevant chunks
+- **Soft URL penalty vs hard cap** — My first version capped each URL to 3 chunks in retrieval results. This caused a subtle bug: for the GRE FAQ, other FAQ chunks from the same page consumed the 3-slot cap before the actual GRE answer chunk could surface. Replacing the hard cap with a soft penalty (`score *= 0.9^n` for the nth chunk from the same URL) preserved source diversity without silently dropping relevant results
 - **Cross-encoder reranking** was the single biggest quality boost for top-5 precision
 - For **Chinese queries**, I discovered that BM25 and the cross-encoder are English-only bottlenecks — adding LLM-based translation *before* retrieval (not after) solved inconsistent results
+- **Page chunk replacement** — For broad queries like "What are the admission requirements?" the system retrieves 3+ section chunks from the same page (personal statement, recommendation letters, English proficiency, etc.), each with only partial information. When this happens, the system automatically replaces those fragments with the full page-level chunk, giving the LLM complete context to synthesize a comprehensive answer
 
 ### Generation: the LLM is the easy part
 
@@ -37,9 +51,15 @@ But **prompt wording directly controls hallucination**. My first prompt said "tr
 
 I also implemented **citation-based source filtering**: the LLM cites [Doc1], [Doc3] in its answer, and only those sources are shown to the user. This eliminated the "irrelevant links" problem that most RAG demos have.
 
-### Methodology: measure + read the failures
+### Evaluation: the hardest part nobody talks about
 
-Most of these improvements came from **combining RAGAS metrics with manual error analysis**. Automated evaluation (faithfulness, answer relevancy) told me *where* the system was weak, but only by reading the actual bad answers could I figure out *why* — a wrong synonym, a misleading prompt instruction, or a chunking boundary that split critical information. The iterative loop of "measure → inspect failures → hypothesize → fix → re-measure" was the real methodology behind this project.
+Building an honest evaluation pipeline was harder than building the RAG system itself.
+
+**Automated metrics (RAGAS) got me started** — faithfulness and answer relevancy told me *where* the system was weak. But they couldn't tell me *why*. Only by reading actual bad answers could I trace the root cause to a chunking boundary, a missing synonym, or a misleading prompt instruction.
+
+**The golden test set trap** — My first approach was to auto-annotate relevant chunks using the system's own retrieval + cross-encoder scores. This is circular: the test set rewards whatever the system already does well, and Recall@5 came out at 0.994 — suspiciously perfect. The honest approach was **manual annotation**: for each of 55 queries, I read the chunks and asked "if the LLM only sees this one chunk, can it correctly answer the question?" This brought Recall@5 down to 0.944 — still strong, but honest, and it exposed real gaps (e.g., career queries missing company list chunks).
+
+The iterative loop of "measure → inspect failures → hypothesize → fix → re-measure" was the real methodology behind this project. Each improvement came from a specific failure case, not from theoretical optimization.
 
 ---
 
@@ -48,17 +68,23 @@ Most of these improvements came from **combining RAGAS metrics with manual error
 The system is built as a full RAG pipeline with two phases:
 
 **Offline Pipeline** — Run once (or when the source website changes) to prepare the knowledge base:
-1. **Web Scraping** — Crawl 147 pages from the UChicago ADS website, preserving HTML structure
-2. **Multi-granularity Chunking** — Split pages into 1,342 chunks using structure-aware extractors: accordion items are split by quarter/course/FAQ/job; generic pages use recursive character splitting (800 chars, 150 overlap). Each chunk carries metadata (source URL, heading, chunk type, labels)
-3. **Embedding & Indexing** — Encode all chunks with a sentence embedding model (MiniLM-L6 or Gemini-Embed-001) and build a FAISS inner-product index. A BM25 index is built in parallel for lexical matching
+1. **Web Scraping** (`notebooks/rag_pipeline.ipynb`) — Crawl 147 pages from the UChicago ADS website, preserving raw HTML
+2. **Page Labeling** (`scripts/prepare_chunks.py`) — Classify each page by topic (admission, course, fee, career, etc.) using keyword-group scoring
+3. **Context-Aware Chunking** — Split pages into 1,294 chunks:
+   - Accordion pages (FAQ, courses, schedule): split by HTML structure, each item is an atomic chunk
+   - Generic pages: paragraph-first splitting with `[Page Title]` context prefix, sentence-boundary-aware for long paragraphs
+   - Every page also generates a page-level parent chunk for broad queries
+4. **Deduplication** — Remove near-duplicate chunks (Jaccard similarity > 0.85), reducing 1,294 → 1,012 chunks
+5. **Embedding & Indexing** — Encode all chunks with MiniLM-L6-v2 (384-dim) and build a FAISS inner-product index
 
-**Online Serving** — For each user query:
-1. **Query Translation** — Non-English queries (detected by character encoding) are translated to English with domain context, since BM25 and the cross-encoder are English-only
-2. **Hybrid Retrieval** — BM25 and FAISS scores are fused via Reciprocal Rank Fusion (k=60), with heading-overlap boosting and per-URL deduplication
-3. **Cross-Encoder Reranking** — Top candidates are re-scored with `ms-marco-MiniLM-L-6-v2` for precision
-4. **Prompt Construction** — Retrieved chunks are labeled [Doc1], [Doc2], etc. The prompt instructs the LLM to cite sources and respond in the user's language
-5. **Streaming Generation** — Gemini LLM generates a token-by-token streamed response via SSE
-6. **Citation Filtering** — Only source links actually cited by the LLM are returned; "I don't know" answers suppress all links
+**Online Serving** (`main.py`) — BM25 index is built from chunk text at server startup. For each user query:
+1. **Query Translation** — Non-English queries are translated to English via Gemini LLM, since BM25 and the cross-encoder are English-only
+2. **Hybrid Retrieval** — BM25 (with stemming + synonym expansion) and FAISS semantic scores are fused via Reciprocal Rank Fusion (k=60), enhanced by heading-overlap boost, label-intent boost, and soft URL diversity penalty
+3. **Cross-Encoder Reranking** — Top 15 candidates are re-scored with `ms-marco-MiniLM-L-6-v2` for precision
+4. **Page Chunk Replacement** — If 3+ reranked hits come from the same page, replace them with the page-level chunk for complete context
+5. **Prompt Construction** — Retrieved chunks are labeled [Doc1], [Doc2], etc. The prompt instructs the LLM to cite sources and respond in the user's language
+6. **Streaming Generation** — Gemini 2.5 Flash Lite generates a token-by-token response via SSE
+7. **Citation Filtering** — Only source links actually cited by the LLM are returned; "I don't know" answers suppress all links
 
 ## Architecture
 
@@ -66,24 +92,27 @@ The system is built as a full RAG pipeline with two phases:
 graph LR
   subgraph offline ["Offline Pipeline"]
     direction TB
-    A["Web Scraping\n(147 pages)"] --> B["Multi-granularity\nChunking\n(1,342 chunks)"]
-    B --> C["Embedding\n(MiniLM / Gemini)"]
+    A["Web Scraping\n(147 pages)"] --> L["Page Labeling\n(topic classification)"]
+    L --> B["Context-Aware\nChunking"]
+    B --> DD["Deduplication\n(1,294 → 1,012)"]
+    DD --> C["Embedding\n(MiniLM-L6-v2)"]
     C --> D["FAISS Index"]
-    B --> E["BM25 Index"]
   end
 
   subgraph online ["Online Serving"]
     direction TB
+    DD2["Chunks"] --> E["BM25 Index\n(built at startup)"]
     Q["User Query"] --> T{"Non-English?"}
-    T -- Yes --> TR["LLM Translation\n(with domain context)"]
+    T -- Yes --> TR["LLM Translation"]
     T -- No --> R
     TR --> R["Hybrid Retrieval\nBM25 + FAISS\n(RRF k=60)"]
     D -.-> R
     E -.-> R
     R --> RR["Cross-Encoder\nReranking"]
-    RR --> P["Prompt\nConstruction"]
-    P --> L["Gemini LLM\n(Streaming)"]
-    L --> CI["Citation Parsing\n+ Source Filtering"]
+    RR --> PC["Page Chunk\nReplacement"]
+    PC --> P["Prompt\nConstruction"]
+    P --> LLM["Gemini LLM\n(Streaming)"]
+    LLM --> CI["Citation Parsing\n+ Source Filtering"]
     CI --> AN["Answer + Sources"]
   end
 
@@ -91,7 +120,7 @@ graph LR
   style online fill:#e6f4ea,stroke:#22c55e,stroke-width:2px
 ```
 
-- **Backend** — FastAPI server (`main.py` + modular `embedder.py`, `retrieval.py`, `prompt.py`)
+- **Backend** — FastAPI server (`main.py` + modular `retrieval.py`, `prompt.py`, `embedder.py`)
 - **Frontend** — React + Vite + Tailwind chat interface with real-time streaming
 
 ---
@@ -100,23 +129,84 @@ graph LR
 
 | Feature | Description |
 |---------|-------------|
-| Hybrid retrieval | BM25 lexical + FAISS semantic search, fused via Reciprocal Rank Fusion (RRF) |
+| Context-aware chunking | Paragraph-first splitting with `[Page Title]` prefix; accordion pages split by HTML structure |
+| Hybrid retrieval | BM25 (stemming + synonym expansion) + FAISS semantic search, fused via RRF |
+| Multi-signal boosting | Heading-overlap boost, label-intent boost, soft URL diversity penalty |
 | Cross-encoder reranking | Re-scores candidates with `ms-marco-MiniLM-L-6-v2` for higher precision |
-| Synonym expansion | Maps domain terms (e.g., "tuition" ↔ "cost", "fee", "price") for better BM25 recall |
+| Page chunk replacement | Broad queries get full page context instead of fragmented section hits |
 | Chinese query support | Translates non-English queries to English for retrieval, responds in user's language |
 | Citation-based sources | Only shows source links the LLM actually referenced in its answer |
 | Streaming responses | Real-time token-by-token output via Server-Sent Events |
-| Configurable embeddings | Switch between local MiniLM (384-dim) and Gemini API (768-dim) via env var |
 
 ---
 
 ## Evaluation
 
-Detailed evaluation notebooks are in [`backend/notebooks/`](backend/notebooks/).
+### Golden Test Set Results
+
+Evaluated on **55 manually-annotated queries** across 7 categories using the full retrieval + reranking pipeline (`eval.py`):
+
+| Metric | Score |
+|--------|-------|
+| **Recall@5** | **0.944** |
+| **MRR** | **0.973** |
+| **NDCG@10** | **0.950** |
+| Recall@1 | 0.507 |
+| Recall@3 | 0.929 |
+| Recall@10 | 0.966 |
+
+#### Per-Category Breakdown
+
+| Category | Queries | Recall@5 | MRR |
+|----------|---------|----------|-----|
+| Admission | 16 | 0.961 | 1.000 |
+| Course | 19 | 0.961 | 1.000 |
+| Fee | 7 | 1.000 | 0.929 |
+| Capstone | 6 | 0.944 | 1.000 |
+| Career | 4 | 0.658 | 0.875 |
+| Application | 2 | 1.000 | 1.000 |
+| Contact | 1 | 1.000 | 0.500 |
+
+The career category has the lowest recall because relevant answers span multiple chunk types (narrative descriptions + hard-coded company/salary lists), making it harder to surface all relevant chunks within top-5.
+
+#### Annotation Methodology
+
+Each query was manually annotated by reviewing chunk text and asking: *"If the LLM only sees this chunk, can it correctly answer the question?"* Average 2.4 relevant chunks per query. Auto-annotation (using the system's own retrieval scores) was deliberately avoided to prevent circular evaluation — see "What I Learned" for details.
+
+### Improvement Journey
+
+| Stage | Recall@5 | What Changed |
+|-------|----------|--------------|
+| Baseline (semantic only, fixed-size chunks) | 0.590 | — |
+| + Hybrid BM25/FAISS with RRF | 0.640 | Added lexical matching |
+| + Synonym expansion + heading boost | ~0.75 | Domain-aware BM25 |
+| + Context-aware chunking + dedup | ~0.85 | Paragraph-first splitting, `[Page Title]` prefix |
+| + Label boost + soft URL penalty + BM25 stemming | **0.944** | Full pipeline with manual golden test set |
+
+> Note: Early stages used RAGAS pseudo-query evaluation (25 queries); final stage uses the 55-query manually-annotated golden test set. Numbers are not directly comparable but show the trajectory.
+
+### Chunking Statistics
+
+| Metric | Value |
+|--------|-------|
+| Source pages crawled | 147 |
+| Chunks before dedup | 1,294 |
+| Chunks after dedup | 1,012 |
+| Dedup threshold | Jaccard > 0.85 |
+
+| Chunk Type | Count | Description |
+|------------|-------|-------------|
+| section | 759 | Paragraph-level chunks with `[Page Title]` prefix |
+| page | 131 | Full page text (parent chunks for broad queries) |
+| accordion_faq | 36 | Individual FAQ Q&A pairs |
+| accordion_course | 35 | Individual course descriptions |
+| accordion_schedule | 19 | Quarter/schedule breakdowns |
+| accordion | 18 | Generic accordion items |
+| accordion_job | 14 | Job/internship listings |
 
 ### Embedding Model Comparison
 
-Four embedding models were evaluated on retrieval quality, cross-lingual performance, and end-to-end answer quality (see [`embedding_comparison.ipynb`](backend/notebooks/embedding_comparison.ipynb)):
+Four embedding models were evaluated on retrieval quality and end-to-end answer quality (see [`embedding_comparison.ipynb`](backend/notebooks/embedding_comparison.ipynb)):
 
 | Model | Dim | Recall@1 | Recall@5 | Faithfulness | Answer Relevancy | Encode Time |
 |-------|-----|----------|----------|--------------|------------------|-------------|
@@ -125,32 +215,13 @@ Four embedding models were evaluated on retrieval quality, cross-lingual perform
 | E5-large-instruct | 1024 | 0.300 | 0.590 | 0.90 | 0.764 | 45.4s |
 | **Gemini-Embed-001** | 3072 | **0.360** | **0.640** | 0.91 | **0.790** | 14.5s |
 
-- **Recall** measured via pseudo-queries generated from chunk text
-- **Faithfulness** and **Answer Relevancy** measured using [RAGAS](https://docs.ragas.io/) with Gemini 2.5 Flash as the LLM judge
-- **Chinese cross-lingual retrieval**: All models showed ~35-40% score drop on Chinese queries against the English corpus. BGE-M3 performed best cross-lingually, but Gemini produced the most accurate and detailed Chinese answers
+> These scores use the early-stage fixed-size chunking and semantic-only retrieval. With the current hybrid pipeline, the embedding model matters less — retrieval quality is dominated by chunking, BM25 fusion, and reranking.
 
-**Decision**: Gemini-Embed-001 selected for production — best recall, highest answer relevancy, and superior Chinese answer quality.
+**Decision: MiniLM-L6-v2 over Gemini-Embed-001.** Gemini won the early-stage comparison, but after building the full hybrid pipeline I chose to stay with MiniLM for three reasons:
 
-### Chunking Validation
-
-Multi-granularity chunking was validated across 4 representative page types (see [`test_chunking.ipynb`](backend/notebooks/test_chunking.ipynb)):
-
-| Page Type | Total Chunks | Strategy |
-|-----------|--------------|----------|
-| Schedule | 22 | 3 parent accordion + 19 quarter sub-chunks |
-| Courses | 33 | 3 parent accordion + 30 course sub-chunks |
-| FAQ | 41 | 5 parent accordion + 36 Q&A sub-chunks |
-| Jobs | 19 | 5 parent accordion + 14 job sub-chunks |
-
-All 8 accordion pages matched dedicated HTML structure selectors with zero fallback triggers, confirming the chunking strategy correctly handles the site's content structure.
-
-### End-to-End RAG Quality
-
-Evaluated on 25 test queries using the full pipeline (see [`rag_pipeline.ipynb`](backend/notebooks/rag_pipeline.ipynb)):
-
-- **Faithfulness**: 0.86 — most answers are grounded in retrieved context
-- **Answer Relevancy**: 0.71 — answers are on-topic with room for improvement on partial-context questions
-- **Retrieval Recall@5**: 0.60 — hybrid BM25+FAISS retrieves the correct chunk in top 5 for 60% of synthetic queries
+1. **No truncation where it matters** — MiniLM's 256-token context window is a known limitation, but all 759 section chunks (the primary retrieval targets) are under 150 words. The 131 page-level chunks *do* get truncated, but they're injected post-retrieval via `_inject_page_chunks()` — their embedding quality is irrelevant since they bypass FAISS entirely
+2. **Hybrid pipeline compensates** — BM25 with synonym expansion handles the lexical matching that short embeddings miss, and the cross-encoder reranker rescores based on full text. The ~5% recall gap between MiniLM and Gemini in semantic-only mode largely disappears once these layers are added
+3. **Zero API dependency at inference** — MiniLM runs locally in ~3ms per query. Gemini embedding requires an API call per query, adding latency and a point of failure. For a real-time chat interface, local inference is a better tradeoff
 
 ---
 
@@ -159,26 +230,26 @@ Evaluated on 25 test queries using the full pipeline (see [`rag_pipeline.ipynb`]
 
 ```
 backend/
-  main.py              # FastAPI app, endpoints, startup
+  main.py              # FastAPI app, endpoints, page chunk replacement
   embedder.py          # Google Gemini Embedding API wrapper
-  retrieval.py         # Hybrid retrieval (BM25 + FAISS + RRF) and reranking
+  retrieval.py         # Hybrid retrieval (BM25 + FAISS + RRF), reranking, boosting
   prompt.py            # Prompt construction, query translation, citation parsing
+  eval.py              # Golden test set evaluation (Recall@K, MRR, NDCG)
   requirements.txt
   Dockerfile           # Backend container (Cloud Run)
   .env.example         # Environment variable template
   data/
-    chunked_documents.json          # 1,342 chunks with metadata
-    embeddings.npy                  # MiniLM embeddings (1342 x 384)
-    embeddings_gemini.npy           # Gemini embeddings (1342 x 768)
-    uchicago_ads_faiss.index        # FAISS index (MiniLM)
-    uchicago_ads_faiss_gemini.index # FAISS index (Gemini)
+    chunked_documents_dedup.json    # 1,012 chunks (production, after dedup)
+    embeddings_dedup.npy            # MiniLM embeddings (1012 x 384)
+    uchicago_ads_faiss_dedup.index  # FAISS index (MiniLM, deduped)
+    golden_test_set.json            # 55 manually-annotated evaluation queries
     uchicago_ads_pages_depth3.json  # Raw crawled pages (147 pages)
   notebooks/
-    rag_pipeline.ipynb              # End-to-end pipeline: scraping, chunking, indexing
-    test_chunking.ipynb             # Validates multi-granularity chunking across page types
-    embedding_comparison.ipynb      # Compares MiniLM vs Gemini embedding quality
+    rag_pipeline.ipynb              # Early-stage pipeline exploration (historical)
+    test_chunking.ipynb             # Chunking validation across page types
+    embedding_comparison.ipynb      # MiniLM vs BGE-M3 vs E5 vs Gemini comparison
   scripts/
-    build_gemini_index.py           # Standalone script to rebuild Gemini FAISS index
+    prepare_chunks.py               # Full pipeline: label → chunk → dedup → embed → index
 
 frontend/
   src/
@@ -210,6 +281,9 @@ pip install -r requirements.txt
 # Set environment variables
 echo "GOOGLE_API_KEY=your-key-here" > .env
 
+# (Optional) Rebuild chunks from scratch
+python scripts/prepare_chunks.py
+
 # Start the server
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
@@ -237,7 +311,8 @@ Open http://localhost:5173
 |----------|----------|---------|-------------|
 | `GOOGLE_API_KEY` | Yes | — | Google AI API key for Gemini LLM and embeddings |
 | `EMBEDDING_MODEL` | No | `minilm` | Embedding model: `minilm` (local) or `gemini` (API) |
-| `ALLOWED_ORIGINS` | No | `*` | Comma-separated CORS origins (e.g., `https://your-domain.web.app`) |
+| `USE_DEDUP` | No | `true` | Use deduplicated chunks (`true`) or full set (`false`) |
+| `ALLOWED_ORIGINS` | No | `*` | Comma-separated CORS origins |
 | `VITE_API_URL` | No | `http://localhost:8000` | Backend URL for the frontend |
 
 </details>
