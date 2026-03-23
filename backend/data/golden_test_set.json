@@ -1,0 +1,465 @@
+[
+  {
+    "query": "What are the core courses in the MS in Applied Data Science program?",
+    "category": "course",
+    "relevant_chunk_ids": [
+      "chunk_652_Course_Progressions_|_DSI",
+      "chunk_1_Master's_in_Applied_Data_Science_|_DSI",
+      "chunk_452_In-Person_Program_|_DSI"
+    ]
+  },
+  {
+    "query": "What is the tuition cost for the program?",
+    "category": "fee",
+    "relevant_chunk_ids": [
+      "chunk_919_Tuition,_Fees,_&_Aid_|_DSI",
+      "chunk_920_Tuition,_Fees,_&_Aid_|_DSI"
+    ]
+  },
+  {
+    "query": "What scholarships are available for the program?",
+    "category": "fee",
+    "relevant_chunk_ids": [
+      "chunk_922_Tuition,_Fees,_&_Aid_|_DSI",
+      "chunk_921_Tuition,_Fees,_&_Aid_|_DSI"
+    ]
+  },
+  {
+    "query": "What are the admission requirements for the program?",
+    "category": "admission",
+    "relevant_chunk_ids": [
+      "chunk_436_How_to_Apply_|_DSI",
+      "chunk_437_How_to_Apply_|_DSI",
+      "chunk_438_How_to_Apply_|_DSI",
+      "chunk_439_How_to_Apply_|_DSI",
+      "chunk_440_How_to_Apply_|_DSI",
+      "chunk_441_How_to_Apply_|_DSI",
+      "chunk_442_How_to_Apply_|_DSI",
+      "chunk_443_How_to_Apply_|_DSI"
+    ]
+  },
+  {
+    "query": "Tell me about the capstone project.",
+    "category": "capstone",
+    "relevant_chunk_ids": [
+      "chunk_627_Capstone_Projects_|_DSI",
+      "chunk_897_Capstone_Project_Archive_|_DSI",
+      "chunk_623_Capstone_Projects_|_DSI"
+    ]
+  },
+  {
+    "query": "Is the GRE or GMAT required?",
+    "category": "admission",
+    "relevant_chunk_ids": [
+      "chunk_755_FAQs_|_DSI",
+      "chunk_756_FAQs_|_DSI",
+      "chunk_778_FAQs_|_DSI"
+    ]
+  },
+  {
+    "query": "When will I receive my admission decision?",
+    "category": "admission",
+    "relevant_chunk_ids": [
+      "chunk_747_FAQs_|_DSI",
+      "chunk_748_FAQs_|_DSI",
+      "chunk_746_FAQs_|_DSI"
+    ]
+  },
+  {
+    "query": "What are the minimum TOEFL and IELTS scores required?",
+    "category": "admission",
+    "relevant_chunk_ids": [
+      "chunk_778_FAQs_|_DSI",
+      "chunk_441_How_to_Apply_|_DSI"
+    ]
+  },
+  {
+    "query": "What is the difference between the online and in-person programs?",
+    "category": "course",
+    "relevant_chunk_ids": [
+      "chunk_772_FAQs_|_DSI",
+      "chunk_769_FAQs_|_DSI",
+      "chunk_767_FAQs_|_DSI",
+      "chunk_478_In-Person_Program_|_DSI",
+      "chunk_518_Online_Program_|_DSI"
+    ]
+  },
+  {
+    "query": "How long does it take to complete the program?",
+    "category": "course",
+    "relevant_chunk_ids": [
+      "chunk_481_In-Person_Program_|_DSI"
+    ]
+  },
+  {
+    "query": "What is the sample full-time schedule?",
+    "category": "course",
+    "relevant_chunk_ids": [
+      "chunk_631_Course_Progressions_|_DSI",
+      "chunk_633_Course_Progressions_|_DSI",
+      "chunk_634_Course_Progressions_|_DSI"
+    ]
+  },
+  {
+    "query": "What is the part-time schedule like?",
+    "category": "course",
+    "relevant_chunk_ids": [
+      "chunk_639_Course_Progressions_|_DSI"
+    ]
+  },
+  {
+    "query": "What are the application deadlines?",
+    "category": "application",
+    "relevant_chunk_ids": [
+      "chunk_917_Events_&_Deadlines_|_DSI",
+      "chunk_748_FAQs_|_DSI",
+      "chunk_916_Events_&_Deadlines_|_DSI"
+    ]
+  },
+  {
+    "query": "Is there an application fee waiver?",
+    "category": "admission",
+    "relevant_chunk_ids": [
+      "chunk_443_How_to_Apply_|_DSI"
+    ]
+  },
+  {
+    "query": "What is the 2-year thesis track program?",
+    "category": "course",
+    "relevant_chunk_ids": [
+      "chunk_785_FAQs_|_DSI",
+      "chunk_781_FAQs_|_DSI",
+      "chunk_481_In-Person_Program_|_DSI"
+    ]
+  },
+  {
+    "query": "How do I apply to the MBA/MS joint degree?",
+    "category": "admission",
+    "relevant_chunk_ids": [
+      "chunk_775_FAQs_|_DSI",
+      "chunk_774_FAQs_|_DSI",
+      "chunk_776_FAQs_|_DSI"
+    ]
+  },
+  {
+    "query": "What noncredit foundational courses are available?",
+    "category": "course",
+    "relevant_chunk_ids": [
+      "chunk_654_Course_Progressions_|_DSI",
+      "chunk_492_Online_Program_|_DSI",
+      "chunk_490_Online_Program_|_DSI"
+    ]
+  },
+  {
+    "query": "What career outcomes do graduates have?",
+    "category": "career",
+    "relevant_chunk_ids": [
+      "chunk_1021_Career_Outcomes_|_DSI",
+      "chunk_1019_Career_Outcomes_|_DSI",
+      "chunk_1020_Career_Outcomes_|_DSI",
+      "chunk_1022_Career_Outcomes_|_DSI",
+      "chunk_1023_Career_Outcomes_|_DSI"
+    ]
+  },
+  {
+    "query": "Will my diploma indicate I completed the program online?",
+    "category": "course",
+    "relevant_chunk_ids": [
+      "chunk_773_FAQs_|_DSI"
+    ]
+  },
+  {
+    "query": "Do I need to provide official transcripts?",
+    "category": "admission",
+    "relevant_chunk_ids": [
+      "chunk_754_FAQs_|_DSI",
+      "chunk_441_How_to_Apply_|_DSI"
+    ]
+  },
+  {
+    "query": "How do online classes work? Are they synchronous or asynchronous?",
+    "category": "course",
+    "relevant_chunk_ids": [
+      "chunk_769_FAQs_|_DSI",
+      "chunk_524_Online_Program_|_DSI",
+      "chunk_523_Online_Program_|_DSI"
+    ]
+  },
+  {
+    "query": "What is the cost of attendance beyond tuition?",
+    "category": "fee",
+    "relevant_chunk_ids": [
+      "chunk_919_Tuition,_Fees,_&_Aid_|_DSI"
+    ]
+  },
+  {
+    "query": "Do international students need a visa to enroll in the online program?",
+    "category": "admission",
+    "relevant_chunk_ids": [
+      "chunk_768_FAQs_|_DSI",
+      "chunk_440_How_to_Apply_|_DSI",
+      "chunk_766_FAQs_|_DSI"
+    ]
+  },
+  {
+    "query": "What are some examples of past capstone projects?",
+    "category": "capstone",
+    "relevant_chunk_ids": [
+      "chunk_896_Capstone_Project_Archive_|_DSI",
+      "chunk_897_Capstone_Project_Archive_|_DSI",
+      "chunk_898_Capstone_Project_Archive_|_DSI"
+    ]
+  },
+  {
+    "query": "How do I become a capstone sponsor?",
+    "category": "capstone",
+    "relevant_chunk_ids": [
+      "chunk_623_Capstone_Projects_|_DSI",
+      "chunk_627_Capstone_Projects_|_DSI",
+      "chunk_628_Capstone_Projects_|_DSI"
+    ]
+  },
+  {
+    "query": "What financial aid options are there for international students?",
+    "category": "fee",
+    "relevant_chunk_ids": [
+      "chunk_922_Tuition,_Fees,_&_Aid_|_DSI"
+    ]
+  },
+  {
+    "query": "What courses do I take in Quarter 1?",
+    "category": "course",
+    "relevant_chunk_ids": [
+      "chunk_491_Online_Program_|_DSI",
+      "chunk_490_Online_Program_|_DSI",
+      "chunk_447_In-Person_Program_|_DSI"
+    ]
+  },
+  {
+    "query": "How do I submit my recommendation letters?",
+    "category": "admission",
+    "relevant_chunk_ids": [
+      "chunk_437_How_to_Apply_|_DSI",
+      "chunk_751_FAQs_|_DSI"
+    ]
+  },
+  {
+    "query": "What is Machine Learning I about?",
+    "category": "course",
+    "relevant_chunk_ids": [
+      "chunk_639_Course_Progressions_|_DSI",
+      "chunk_633_Course_Progressions_|_DSI"
+    ]
+  },
+  {
+    "query": "Can I switch between the 1-year and 2-year programs after enrolling?",
+    "category": "course",
+    "relevant_chunk_ids": [
+      "chunk_783_FAQs_|_DSI",
+      "chunk_784_FAQs_|_DSI",
+      "chunk_780_FAQs_|_DSI"
+    ]
+  },
+  {
+    "query": "What research areas does the Data Science Institute focus on?",
+    "category": "capstone",
+    "relevant_chunk_ids": [
+      "chunk_18_The_UChicago_Data_Science_Institute_|_DSI",
+      "chunk_107_Research_|_DSI",
+      "chunk_19_The_UChicago_Data_Science_Institute_|_DSI"
+    ]
+  },
+  {
+    "query": "How many spots are available in the 2-year program?",
+    "category": "course",
+    "relevant_chunk_ids": [
+      "chunk_786_FAQs_|_DSI",
+      "chunk_784_FAQs_|_DSI"
+    ]
+  },
+  {
+    "query": "What is the thesis requirement for the 2-year program?",
+    "category": "course",
+    "relevant_chunk_ids": [
+      "chunk_785_FAQs_|_DSI",
+      "chunk_481_In-Person_Program_|_DSI",
+      "chunk_781_FAQs_|_DSI"
+    ]
+  },
+  {
+    "query": "Where do I send my TOEFL scores?",
+    "category": "admission",
+    "relevant_chunk_ids": [
+      "chunk_762_FAQs_|_DSI"
+    ]
+  },
+  {
+    "query": "Do employers value the online degree the same as in-person?",
+    "category": "career",
+    "relevant_chunk_ids": [
+      "chunk_772_FAQs_|_DSI",
+      "chunk_766_FAQs_|_DSI",
+      "chunk_771_FAQs_|_DSI"
+    ]
+  },
+  {
+    "query": "What is the Summer Lab research program?",
+    "category": "capstone",
+    "relevant_chunk_ids": [
+      "chunk_89_Summer_Research_Programs_|_DSI",
+      "chunk_88_Summer_Research_Programs_|_DSI",
+      "chunk_90_Summer_Research_Programs_|_DSI"
+    ]
+  },
+  {
+    "query": "How do I contact the admissions team?",
+    "category": "contact",
+    "relevant_chunk_ids": [
+      "chunk_442_How_to_Apply_|_DSI",
+      "chunk_444_How_to_Apply_|_DSI"
+    ]
+  },
+  {
+    "query": "What are the differences between MS in Applied Data Science and MS in Data Science?",
+    "category": "course",
+    "relevant_chunk_ids": [
+      "chunk_1146_Applying_to_the_MS_in_Applied_Data_Science_Program?_Here’s_What_We_Look_For_|_DSI",
+      "chunk_1140_Applying_to_the_MS_in_Applied_Data_Science_Program?_Here’s_What_We_Look_For_|_DSI",
+      "chunk_1147_Applying_to_the_MS_in_Applied_Data_Science_Program?_Here’s_What_We_Look_For_|_DSI"
+    ]
+  },
+  {
+    "query": "Can in-person students take online courses and vice versa?",
+    "category": "course",
+    "relevant_chunk_ids": [
+      "chunk_767_FAQs_|_DSI",
+      "chunk_772_FAQs_|_DSI",
+      "chunk_766_FAQs_|_DSI"
+    ]
+  },
+  {
+    "query": "What materials do I need for my application?",
+    "category": "admission",
+    "relevant_chunk_ids": [
+      "chunk_753_FAQs_|_DSI"
+    ]
+  },
+  {
+    "query": "多少钱",
+    "category": "fee",
+    "relevant_chunk_ids": [
+      "chunk_919_Tuition,_Fees,_&_Aid_|_DSI"
+    ]
+  },
+  {
+    "query": "这个项目要读多久",
+    "category": "course",
+    "relevant_chunk_ids": [
+      "chunk_481_In-Person_Program_|_DSI"
+    ]
+  },
+  {
+    "query": "怎么申请",
+    "category": "admission",
+    "relevant_chunk_ids": [
+      "chunk_437_How_to_Apply_|_DSI",
+      "chunk_441_How_to_Apply_|_DSI",
+      "chunk_438_How_to_Apply_|_DSI"
+    ]
+  },
+  {
+    "query": "有奖学金吗",
+    "category": "fee",
+    "relevant_chunk_ids": [
+      "chunk_922_Tuition,_Fees,_&_Aid_|_DSI"
+    ]
+  },
+  {
+    "query": "毕业后能找到什么工作",
+    "category": "career",
+    "relevant_chunk_ids": [
+      "chunk_1021_Career_Outcomes_|_DSI",
+      "chunk_1022_Career_Outcomes_|_DSI",
+      "chunk_1023_Career_Outcomes_|_DSI"
+    ]
+  },
+  {
+    "query": "GRE?",
+    "category": "admission",
+    "relevant_chunk_ids": [
+      "chunk_755_FAQs_|_DSI",
+      "chunk_756_FAQs_|_DSI"
+    ]
+  },
+  {
+    "query": "capstone",
+    "category": "capstone",
+    "relevant_chunk_ids": [
+      "chunk_897_Capstone_Project_Archive_|_DSI",
+      "chunk_627_Capstone_Projects_|_DSI",
+      "chunk_622_Capstone_Projects_|_DSI"
+    ]
+  },
+  {
+    "query": "do I need GRE",
+    "category": "admission",
+    "relevant_chunk_ids": [
+      "chunk_756_FAQs_|_DSI",
+      "chunk_755_FAQs_|_DSI"
+    ]
+  },
+  {
+    "query": "how much does it cost",
+    "category": "fee",
+    "relevant_chunk_ids": [
+      "chunk_919_Tuition,_Fees,_&_Aid_|_DSI"
+    ]
+  },
+  {
+    "query": "can I work while studying",
+    "category": "course",
+    "relevant_chunk_ids": [
+      "chunk_484_In-Person_Program_|_DSI"
+    ]
+  },
+  {
+    "query": "OPT STEM eligible?",
+    "category": "admission",
+    "relevant_chunk_ids": [
+      "chunk_482_In-Person_Program_|_DSI",
+      "chunk_483_In-Person_Program_|_DSI",
+      "chunk_765_FAQs_|_DSI"
+    ]
+  },
+  {
+    "query": "where do graduates work",
+    "category": "career",
+    "relevant_chunk_ids": [
+      "chunk_1023_Career_Outcomes_|_DSI",
+      "chunk_1022_Career_Outcomes_|_DSI"
+    ]
+  },
+  {
+    "query": "线上和线下有什么区别",
+    "category": "course",
+    "relevant_chunk_ids": [
+      "chunk_772_FAQs_|_DSI",
+      "chunk_769_FAQs_|_DSI",
+      "chunk_767_FAQs_|_DSI"
+    ]
+  },
+  {
+    "query": "need coding experience?",
+    "category": "admission",
+    "relevant_chunk_ids": [
+      "chunk_1141_Applying_to_the_MS_in_Applied_Data_Science_Program?_Here’s_What_We_Look_For_|_DSI"
+    ]
+  },
+  {
+    "query": "deadline",
+    "category": "application",
+    "relevant_chunk_ids": [
+      "chunk_917_Events_&_Deadlines_|_DSI"
+    ]
+  }
+]

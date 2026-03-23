@@ -29,14 +29,17 @@ from pydantic import BaseModel
 from rank_bm25 import BM25Okapi
 from sentence_transformers import SentenceTransformer, CrossEncoder
 
+from collections import Counter
+
 from embedder import GoogleEmbedderWrapper
-from retrieval import retrieve, rerank, is_list_query, _requested_count
+from retrieval import retrieve, rerank, is_list_query, _requested_count, tokenize_for_bm25
 from prompt import translate_to_english, build_prompt, parse_citations
 
 # ---------------------------------------------------------------------------
 # Embedding model selection via env var
 # ---------------------------------------------------------------------------
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "minilm").lower()
+USE_DEDUP = os.getenv("USE_DEDUP", "true").lower() in ("true", "1", "yes")
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 
@@ -68,12 +71,15 @@ async def lifespan(app: FastAPI):
     print("Loading cross-encoder...")
     cross_encoder = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 
-    print("Loading chunk records...")
-    with open(os.path.join(DATA_DIR, "chunked_documents.json"), "r", encoding="utf-8") as f:
+    dedup_suffix = "_dedup" if USE_DEDUP else ""
+    chunks_file = f"chunked_documents{dedup_suffix}.json"
+    print(f"Loading chunk records from {chunks_file}...")
+    with open(os.path.join(DATA_DIR, chunks_file), "r", encoding="utf-8") as f:
         chunk_records = json.load(f)
 
-    emb_file = "embeddings_gemini.npy" if EMBEDDING_MODEL == "gemini" else "embeddings.npy"
-    idx_file = "uchicago_ads_faiss_gemini.index" if EMBEDDING_MODEL == "gemini" else "uchicago_ads_faiss.index"
+    gemini = EMBEDDING_MODEL == "gemini"
+    emb_file = f"embeddings{'_gemini' if gemini else ''}{dedup_suffix}.npy"
+    idx_file = f"uchicago_ads_faiss{'_gemini' if gemini else ''}{dedup_suffix}.index"
     emb_path = os.path.join(DATA_DIR, emb_file)
     idx_path = os.path.join(DATA_DIR, idx_file)
 
@@ -91,7 +97,7 @@ async def lifespan(app: FastAPI):
         del vecs
 
     print("Building BM25 index...")
-    tokenized = [c["text"].lower().split() for c in chunk_records]
+    tokenized = [tokenize_for_bm25(c["text"]) for c in chunk_records]
     bm25 = BM25Okapi(tokenized)
 
     print("Initializing LLM...")
@@ -135,6 +141,49 @@ class SourceReference(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Page chunk replacement
+# ---------------------------------------------------------------------------
+def _inject_page_chunks(hits: list, chunk_records: list, threshold: int = 3) -> list:
+    """If 3+ hits come from the same page, replace them with the page-level chunk."""
+    page_counts = Counter(h["page_title"] for h in hits if h.get("page_title"))
+
+    page_chunks = {}
+    for c in chunk_records:
+        if c["metadata"].get("chunk_type") == "page":
+            pt = c["metadata"].get("page_title", "")
+            if pt:
+                page_chunks[pt] = c
+
+    replaced_pages = set()
+    for page_title, count in page_counts.items():
+        if count >= threshold and page_title in page_chunks:
+            replaced_pages.add(page_title)
+
+    if not replaced_pages:
+        return hits
+
+    result = []
+    for pt in replaced_pages:
+        pc = page_chunks[pt]
+        meta = pc["metadata"]
+        url = meta.get("source_urls", [meta.get("source_url", "")])[0] if "source_urls" in meta else meta.get("source_url", "")
+        result.append({
+            "chunk_id": pc["chunk_id"],
+            "text": pc["text"],
+            "url": url,
+            "page_title": meta.get("page_title", ""),
+            "labels": meta.get("labels", []),
+            "score": 1.0,
+        })
+
+    for h in hits:
+        if h.get("page_title") not in replaced_pages:
+            result.append(h)
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Endpoint
 # ---------------------------------------------------------------------------
 @app.post("/ask")
@@ -146,10 +195,11 @@ async def ask(body: QuestionRequest):
     en_query = await translate_to_english(body.question, llm)
 
     listing = is_list_query(en_query)
-    retrieve_k = 20 if listing else 10
+    retrieve_k = 20 if listing else 15
     rerank_k = max(5, _requested_count(en_query)) if listing else 5
     candidates = retrieve(en_query, chunk_records, embedder, bm25, faiss_index, top_k=retrieve_k)
     hits = rerank(en_query, candidates, cross_encoder, top_k=rerank_k)
+    hits = _inject_page_chunks(hits, chunk_records)
     # Use original query in prompt so LLM answers in the user's language
     prompt = build_prompt(body.question, hits)
 
