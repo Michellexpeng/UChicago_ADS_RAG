@@ -11,7 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download HuggingFace models so they are baked into the image
+# ONNX models are included in backend/models/ — no HuggingFace download needed.
+# Pre-download PyTorch models as fallback (used when USE_ONNX=false).
 RUN python -c "\
 from sentence_transformers import SentenceTransformer, CrossEncoder; \
 SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2'); \

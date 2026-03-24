@@ -31,8 +31,9 @@ gcloud run deploy "$SERVICE_NAME" \
   --source ./backend \
   --project "$PROJECT_ID" \
   --region "$REGION" \
-  --memory 2Gi \
-  --cpu 2 \
+  --memory 4Gi \
+  --cpu 4 \
+  --cpu-boost \
   --min-instances 0 \
   --max-instances 3 \
   --timeout 300 \

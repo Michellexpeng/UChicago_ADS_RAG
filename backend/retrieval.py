@@ -86,7 +86,7 @@ _SYNONYMS = {
     "alumni":               ["graduate", "graduate outcome", "placement"],
     "core courses":         ["required courses", "mandatory classes"],
     "foundational courses": ["before join", "resources before joining", "preparation materials", "pre-course resources"],
-    "python":               ["programming", "coding", "code"],
+    "programming":          ["python", "R", "coding", "code"],
 }
 
 _REVERSE_SYNONYMS: dict[str, str] = {}

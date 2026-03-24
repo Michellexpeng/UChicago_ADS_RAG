@@ -39,7 +39,7 @@ Structure-aware chunking for accordion pages (FAQ, Course Progressions, etc.) wa
 - **Heading-overlap boosting** was a surprisingly effective signal — when a chunk's heading matches the query keywords, it's almost always relevant. I gave structured content (accordions, page-level sections) a 2x boost multiplier, which noticeably improved precision for navigational queries like "what are the core courses?"
 - **Label-based intent matching** — Each chunk carries topic labels (admission, course, fee, career, etc.) assigned during chunking. When the query's intent matches a chunk's label, it gets a small RRF boost. This acts as a lightweight topic filter that helps surface domain-relevant chunks
 - **Soft URL penalty vs hard cap** — My first version capped each URL to 3 chunks in retrieval results. This caused a subtle bug: for the GRE FAQ, other FAQ chunks from the same page consumed the 3-slot cap before the actual GRE answer chunk could surface. Replacing the hard cap with a soft penalty (`score *= 0.9^n` for the nth chunk from the same URL) preserved source diversity without silently dropping relevant results
-- **Cross-encoder reranking** was the single biggest quality boost for top-5 precision
+- **Cross-encoder reranking** was the single biggest quality boost for top-5 precision — but also the latency bottleneck (70% of pre-LLM time). PyTorch CPU inference for 15 query-document pairs took ~2s on Cloud Run. Switching to **ONNX Runtime** with pre-exported models and `max_length=256` truncation brought this down to ~0.9s. The key insight: `sentence-transformers`' built-in ONNX backend still calls the HuggingFace API at runtime (which gets rate-limited on Cloud Run IPs), so I exported the models locally with `torch.onnx.export` and baked the `.onnx` files directly into the Docker image
 - For **Chinese queries**, I discovered that BM25 and the cross-encoder are English-only bottlenecks — adding LLM-based translation *before* retrieval (not after) solved inconsistent results
 - **Page chunk replacement** — For broad queries like "What are the admission requirements?" the system retrieves 3+ section chunks from the same page (personal statement, recommendation letters, English proficiency, etc.), each with only partial information. When this happens, the system automatically replaces those fragments with the full page-level chunk, giving the LLM complete context to synthesize a comprehensive answer
 
@@ -80,7 +80,7 @@ The system is built as a full RAG pipeline with two phases:
 **Online Serving** (`main.py`) — BM25 index is built from chunk text at server startup. For each user query:
 1. **Query Translation** — Non-English queries are translated to English via Gemini LLM, since BM25 and the cross-encoder are English-only
 2. **Hybrid Retrieval** — BM25 (with stemming + synonym expansion) and FAISS semantic scores are fused via Reciprocal Rank Fusion (k=60), enhanced by heading-overlap boost, label-intent boost, and soft URL diversity penalty
-3. **Cross-Encoder Reranking** — Top 15 candidates are re-scored with `ms-marco-MiniLM-L-6-v2` for precision
+3. **Cross-Encoder Reranking** — Top 15 candidates are re-scored with `ms-marco-MiniLM-L-6-v2` via ONNX Runtime (~0.9s on Cloud Run)
 4. **Page Chunk Replacement** — If 3+ reranked hits come from the same page, replace them with the page-level chunk for complete context
 5. **Prompt Construction** — Retrieved chunks are labeled [Doc1], [Doc2], etc. The prompt instructs the LLM to cite sources and respond in the user's language
 6. **Streaming Generation** — Gemini 2.5 Flash Lite generates a token-by-token response via SSE
@@ -120,7 +120,7 @@ graph LR
   style online fill:#e6f4ea,stroke:#22c55e,stroke-width:2px
 ```
 
-- **Backend** — FastAPI server (`main.py` + modular `retrieval.py`, `prompt.py`, `embedder.py`)
+- **Backend** — FastAPI server (`main.py` + modular `retrieval.py`, `prompt.py`, `embedder.py`, `onnx_models.py`)
 - **Frontend** — React + Vite + Tailwind chat interface with real-time streaming
 
 ---
@@ -215,7 +215,7 @@ Four embedding models were evaluated on retrieval quality and end-to-end answer 
 | E5-large-instruct | 1024 | 0.300 | 0.590 | 0.90 | 0.764 | 45.4s |
 | **Gemini-Embed-001** | 3072 | **0.360** | **0.640** | 0.91 | **0.790** | 14.5s |
 
-> These scores use the early-stage fixed-size chunking and semantic-only retrieval. With the current hybrid pipeline, the embedding model matters less — retrieval quality is dominated by chunking, BM25 fusion, and reranking.
+> These scores use pseudo-query evaluation (first sentence of each chunk as query, 100 samples) with the full hybrid pipeline. Cross-encoder reranking was excluded from recall measurement to isolate embedding quality. The modest recall differences across models confirm that retrieval quality is dominated by chunking strategy, BM25 fusion, and reranking rather than embedding choice.
 
 **Decision: MiniLM-L6-v2 over Gemini-Embed-001.** Gemini won the early-stage comparison, but after building the full hybrid pipeline I chose to stay with MiniLM for three reasons:
 
@@ -234,6 +234,7 @@ backend/
   embedder.py          # Google Gemini Embedding API wrapper
   retrieval.py         # Hybrid retrieval (BM25 + FAISS + RRF), reranking, boosting
   prompt.py            # Prompt construction, query translation, citation parsing
+  onnx_models.py       # ONNX Runtime inference wrappers (embedder + cross-encoder)
   eval.py              # Golden test set evaluation (Recall@K, MRR, NDCG)
   requirements.txt
   Dockerfile           # Backend container (Cloud Run)
@@ -244,8 +245,12 @@ backend/
     uchicago_ads_faiss_dedup.index  # FAISS index (MiniLM, deduped)
     golden_test_set.json            # 55 manually-annotated evaluation queries
     uchicago_ads_pages_depth3.json  # Raw crawled pages (147 pages)
+  models/                           # Pre-exported ONNX models (not in git, baked into Docker)
+    minilm_embedder.onnx            # MiniLM-L6-v2 embedding model (87MB)
+    cross_encoder.onnx              # ms-marco-MiniLM-L-6-v2 reranker (87MB)
   notebooks/
     rag_pipeline.ipynb              # Early-stage pipeline exploration (historical)
+    debug_pipeline.ipynb            # Step-by-step retrieval pipeline debugger
     test_chunking.ipynb             # Chunking validation across page types
     embedding_comparison.ipynb      # MiniLM vs BGE-M3 vs E5 vs Gemini comparison
   scripts/
@@ -311,6 +316,7 @@ Open http://localhost:5173
 |----------|----------|---------|-------------|
 | `GOOGLE_API_KEY` | Yes | — | Google AI API key for Gemini LLM and embeddings |
 | `EMBEDDING_MODEL` | No | `minilm` | Embedding model: `minilm` (local) or `gemini` (API) |
+| `USE_ONNX` | No | `true` | Use ONNX Runtime for inference (`true`) or PyTorch (`false`) |
 | `USE_DEDUP` | No | `true` | Use deduplicated chunks (`true`) or full set (`false`) |
 | `ALLOWED_ORIGINS` | No | `*` | Comma-separated CORS origins |
 | `VITE_API_URL` | No | `http://localhost:8000` | Backend URL for the frontend |

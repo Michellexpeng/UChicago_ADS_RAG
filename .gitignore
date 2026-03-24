@@ -17,5 +17,8 @@ frontend/.env.local
 # Firebase
 frontend/.firebase/
 
+# ONNX models (large binaries, baked into Docker image at build time)
+backend/models/
+
 # OS
 .DS_Store

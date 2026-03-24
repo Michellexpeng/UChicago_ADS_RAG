@@ -8,10 +8,12 @@ Usage:
 Environment Variables:
   GOOGLE_API_KEY=...
   EMBEDDING_MODEL=minilm|gemini  (default: minilm)
+  USE_ONNX=true|false  (default: true — use ONNX Runtime for faster CPU inference)
 """
 
 import json
 import os
+import time
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -39,6 +41,7 @@ from prompt import translate_to_english, build_prompt, parse_citations
 # Embedding model selection via env var
 # ---------------------------------------------------------------------------
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "minilm").lower()
+USE_ONNX = os.getenv("USE_ONNX", "true").lower() in ("true", "1", "yes")
 USE_DEDUP = os.getenv("USE_DEDUP", "true").lower() in ("true", "1", "yes")
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
@@ -64,12 +67,19 @@ async def lifespan(app: FastAPI):
     if EMBEDDING_MODEL == "gemini":
         print("Loading embedding model: Gemini-Embed-001 (API)...")
         embedder = GoogleEmbedderWrapper()
+    elif USE_ONNX:
+        from onnx_models import OnnxEmbedder, OnnxCrossEncoder
+        print("Loading embedding model: MiniLM-L6-v2 (ONNX)...")
+        embedder = OnnxEmbedder()
+        print("Loading cross-encoder (ONNX)...")
+        cross_encoder = OnnxCrossEncoder()
     else:
-        print("Loading embedding model: MiniLM-L6-v2 (local)...")
+        print("Loading embedding model: MiniLM-L6-v2 (PyTorch)...")
         embedder = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
-    print("Loading cross-encoder...")
-    cross_encoder = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+    if cross_encoder is None:
+        print("Loading cross-encoder (PyTorch)...")
+        cross_encoder = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 
     dedup_suffix = "_dedup" if USE_DEDUP else ""
     chunks_file = f"chunked_documents{dedup_suffix}.json"
@@ -191,17 +201,26 @@ async def ask(body: QuestionRequest):
     if not body.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
+    t0 = time.time()
+
     # Translate non-English queries for retrieval (BM25 + cross-encoder need English)
     en_query = await translate_to_english(body.question, llm)
+    t1 = time.time()
 
     listing = is_list_query(en_query)
-    retrieve_k = 20 if listing else 15
+    retrieve_k = 15
     rerank_k = max(5, _requested_count(en_query)) if listing else 5
     candidates = retrieve(en_query, chunk_records, embedder, bm25, faiss_index, top_k=retrieve_k)
+    t2 = time.time()
+
     hits = rerank(en_query, candidates, cross_encoder, top_k=rerank_k)
+    t3 = time.time()
+
     hits = _inject_page_chunks(hits, chunk_records)
     # Use original query in prompt so LLM answers in the user's language
     prompt = build_prompt(body.question, hits)
+
+    print(f"⏱ translate={t1-t0:.3f}s  retrieve={t2-t1:.3f}s  rerank={t3-t2:.3f}s  total_before_llm={t3-t0:.3f}s")
 
     async def stream():
         full_answer = ""
