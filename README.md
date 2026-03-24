@@ -173,17 +173,18 @@ The career category has the lowest recall because relevant answers span multiple
 
 Each query was manually annotated by reviewing chunk text and asking: *"If the LLM only sees this chunk, can it correctly answer the question?"* Average 2.4 relevant chunks per query. Auto-annotation (using the system's own retrieval scores) was deliberately avoided to prevent circular evaluation — see "What I Learned" for details.
 
-### Improvement Journey
+### Ablation Study
 
-| Stage | Recall@5 | What Changed |
-|-------|----------|--------------|
-| Baseline (semantic only, fixed-size chunks) | 0.590 | — |
-| + Hybrid BM25/FAISS with RRF | 0.640 | Added lexical matching |
-| + Synonym expansion + heading boost | ~0.75 | Domain-aware BM25 |
-| + Context-aware chunking + dedup | ~0.85 | Paragraph-first splitting, `[Page Title]` prefix |
-| + Label boost + soft URL penalty + BM25 stemming | **0.944** | Full pipeline with manual golden test set |
+Each stage adds one component to the pipeline. All evaluated on the same 55-query golden test set (`python eval.py --mode ablation`):
 
-> Note: Early stages used RAGAS pseudo-query evaluation (25 queries); final stage uses the 55-query manually-annotated golden test set. Numbers are not directly comparable but show the trajectory.
+| Stage | Recall@5 | MRR | ΔR@5 | What Changed |
+|-------|----------|-----|------|--------------|
+| 1. FAISS only | 0.455 | 0.526 | — | Semantic search baseline |
+| 2. + BM25 hybrid (RRF) | 0.528 | 0.624 | +0.073 | Added lexical matching via Reciprocal Rank Fusion |
+| 3. + Boosting + reranking | 0.663 | 0.755 | +0.135 | Synonym expansion, heading/label boost, URL penalty, cross-encoder |
+| 4. + Deduplication | **0.944** | **0.973** | **+0.281** | Removed 282 near-duplicate chunks (Jaccard > 0.85) |
+
+> Deduplication had the largest single impact (+0.281 Recall@5). Near-duplicate chunks were consuming top-K slots with redundant content, preventing the truly relevant chunk from surfacing. Boosting signals (synonym expansion, heading/label boost, URL penalty) were designed to work with the cross-encoder reranker — in isolation they can hurt precision by promoting false positives that the reranker would otherwise filter out.
 
 ### Chunking Statistics
 

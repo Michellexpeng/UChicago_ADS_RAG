@@ -30,7 +30,7 @@ from sentence_transformers import SentenceTransformer, CrossEncoder
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from retrieval import retrieve, rerank, tokenize_for_bm25
+from retrieval import retrieve, rerank, tokenize_for_bm25, RetrievalConfig
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 
@@ -250,11 +250,117 @@ def eval_pseudo(chunk_records, embedder, bm25, faiss_index, cross_enc,
 
 
 # ---------------------------------------------------------------------------
+# Ablation study
+# ---------------------------------------------------------------------------
+def eval_ablation(retrieve_k=20, rerank_k=10, eval_mode="golden", n_samples=100):
+    """Run ablation study: progressively enable features and measure impact.
+
+    Each stage adds one feature on top of the previous stage.
+    Both dedup and non-dedup chunks are tested at the final stage.
+    """
+    STAGES = [
+        ("1. FAISS only",
+         False,  # dedup
+         RetrievalConfig(use_bm25=False, use_synonyms=False, use_heading_boost=False,
+                         use_label_boost=False, use_url_penalty=False),
+         False),  # use_reranking
+        ("2. + BM25 hybrid (RRF)",
+         False,
+         RetrievalConfig(use_bm25=True, use_synonyms=False, use_heading_boost=False,
+                         use_label_boost=False, use_url_penalty=False),
+         False),
+        ("3. + Boosting + reranking",
+         False,
+         RetrievalConfig(),  # all retrieval features on
+         True),
+        ("4. + Deduplication",
+         True,
+         RetrievalConfig(),
+         True),
+    ]
+
+    print(f"\n{'='*70}")
+    print(f"Ablation Study (eval={eval_mode}, retrieve_k={retrieve_k}, rerank_k={rerank_k})")
+    print(f"{'='*70}")
+
+    results_table = []
+
+    for stage_name, dedup, config, use_reranking in STAGES:
+        print(f"\n--- {stage_name} (dedup={dedup}) ---")
+        chunk_records, embedder, bm25, faiss_index, cross_enc = load_resources(dedup=dedup)
+        print(f"  Chunks: {len(chunk_records)}")
+
+        if eval_mode == "golden":
+            golden_path = os.path.join(DATA_DIR, "golden_test_set.json")
+            with open(golden_path, "r", encoding="utf-8") as f:
+                test_set = json.load(f)
+
+            recall5_list, mrr_list = [], []
+            for item in test_set:
+                query = _translate_query(item["query"])
+                relevant = set(item["relevant_chunk_ids"])
+                candidates = retrieve(query, chunk_records, embedder, bm25, faiss_index,
+                                      top_k=retrieve_k, config=config)
+                if use_reranking:
+                    hits = rerank(query, candidates, cross_enc, top_k=rerank_k)
+                else:
+                    hits = candidates[:rerank_k]
+                retrieved_ids = [h["chunk_id"] for h in hits]
+                recall5_list.append(recall_at_k(retrieved_ids, relevant, 5))
+                mrr_list.append(reciprocal_rank(retrieved_ids, relevant))
+
+            avg_r5 = sum(recall5_list) / len(recall5_list)
+            avg_mrr = sum(mrr_list) / len(mrr_list)
+            n_queries = len(test_set)
+
+        else:  # pseudo
+            rng = np.random.RandomState(42)
+            indices = rng.choice(len(chunk_records), size=min(n_samples, len(chunk_records)), replace=False)
+            recall5_list, mrr_list = [], []
+            for idx in indices:
+                chunk = chunk_records[idx]
+                first_sentence = chunk["text"].strip().split(".")[0].strip()
+                if len(first_sentence) < 10:
+                    continue
+                true_id = chunk["chunk_id"]
+                candidates = retrieve(first_sentence, chunk_records, embedder, bm25, faiss_index,
+                                      top_k=retrieve_k, config=config)
+                if use_reranking:
+                    hits = rerank(first_sentence, candidates, cross_enc, top_k=rerank_k)
+                else:
+                    hits = candidates[:rerank_k]
+                retrieved_ids = [h["chunk_id"] for h in hits]
+                recall5_list.append(recall_at_k(retrieved_ids, {true_id}, 5))
+                mrr_list.append(reciprocal_rank(retrieved_ids, {true_id}))
+
+            avg_r5 = sum(recall5_list) / len(recall5_list)
+            avg_mrr = sum(mrr_list) / len(mrr_list)
+            n_queries = len(recall5_list)
+
+        results_table.append((stage_name, n_queries, avg_r5, avg_mrr))
+        print(f"  Recall@5={avg_r5:.3f}  MRR={avg_mrr:.3f}")
+
+    # Print summary table
+    print(f"\n{'='*70}")
+    print("ABLATION SUMMARY")
+    print(f"{'='*70}")
+    print(f"  {'Stage':<42} {'N':>4}  {'R@5':>6}  {'MRR':>6}  {'ΔR@5':>6}")
+    print(f"  {'─'*42} {'─'*4}  {'─'*6}  {'─'*6}  {'─'*6}")
+    prev_r5 = None
+    for stage_name, n, r5, mrr in results_table:
+        delta = f"+{r5 - prev_r5:.3f}" if prev_r5 is not None else "  —"
+        print(f"  {stage_name:<42} {n:>4}  {r5:.3f}  {mrr:.3f}  {delta:>6}")
+        prev_r5 = r5
+
+    return results_table
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="RAG retrieval evaluation")
-    parser.add_argument("--mode", choices=["golden", "pseudo", "both"], default="both",
+    parser.add_argument("--mode", choices=["golden", "pseudo", "both", "ablation"], default="both",
                         help="Evaluation mode (default: both)")
     parser.add_argument("--dedup", action="store_true",
                         help="Use deduplicated chunks")
@@ -265,6 +371,11 @@ def main():
     parser.add_argument("--rerank-k", type=int, default=10,
                         help="Number of results after reranking")
     args = parser.parse_args()
+
+    if args.mode == "ablation":
+        eval_ablation(retrieve_k=args.retrieve_k, rerank_k=args.rerank_k,
+                      eval_mode="golden", n_samples=args.samples)
+        return
 
     chunk_records, embedder, bm25, faiss_index, cross_enc = load_resources(dedup=args.dedup)
     print(f"\nChunks loaded: {len(chunk_records)}")

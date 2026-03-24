@@ -3,8 +3,19 @@ Hybrid retrieval (BM25 + semantic FAISS) with RRF fusion, synonym expansion, and
 """
 
 import re
+from dataclasses import dataclass, field
 
 import numpy as np
+
+
+@dataclass
+class RetrievalConfig:
+    """Feature flags for ablation study. All enabled by default (production behavior)."""
+    use_bm25: bool = True
+    use_synonyms: bool = True
+    use_heading_boost: bool = True
+    use_label_boost: bool = True
+    use_url_penalty: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -165,15 +176,16 @@ def _detect_query_labels(query: str) -> set[str]:
 # Hybrid retrieval
 # ---------------------------------------------------------------------------
 def retrieve(query: str, chunk_records: list, embedder, bm25, faiss_index,
-             top_k: int = 10, dup_thresh: float = 0.95) -> list:
+             top_k: int = 10, dup_thresh: float = 0.95,
+             config: RetrievalConfig | None = None) -> list:
     """Hybrid retrieval: BM25 + semantic (FAISS) fused with RRF over all chunks.
 
     Returns top_k candidates for the reranker. No URL cap is applied here
     so that relevant chunks from FAQ-heavy pages are not prematurely dropped.
     """
+    cfg = config or RetrievalConfig()
     n_chunks = len(chunk_records)
     q_emb = embedder.encode([query], normalize_embeddings=True)[0].astype("float32")
-    bm25_scores = bm25.get_scores(tokenize_for_bm25(expand_query(query)))
 
     # Semantic ranking via FAISS search (returns all chunks ranked by similarity)
     _, sem_ranked_idxs = faiss_index.search(q_emb.reshape(1, -1), n_chunks)
@@ -181,45 +193,52 @@ def retrieve(query: str, chunk_records: list, embedder, bm25, faiss_index,
 
     # RRF fusion (k=60) — only needs rank positions, not raw scores
     k = 60
-    bm25_ranks = np.argsort(-bm25_scores)
     rrf = np.zeros(n_chunks)
     for rank, idx in enumerate(sem_ranked_idxs):
         rrf[idx] += 1.0 / (k + rank + 1)
-    for rank, idx in enumerate(bm25_ranks):
-        rrf[idx] += 1.0 / (k + rank + 1)
+
+    if cfg.use_bm25:
+        expanded = expand_query(query) if cfg.use_synonyms else query
+        bm25_scores = bm25.get_scores(tokenize_for_bm25(expanded))
+        bm25_ranks = np.argsort(-bm25_scores)
+        for rank, idx in enumerate(bm25_ranks):
+            rrf[idx] += 1.0 / (k + rank + 1)
 
     # Heading boost: boost chunks whose heading overlaps with query keywords
-    q_tokens = set(re.sub(r"[^a-z0-9\s]", " ", query.lower()).split())
-    q_tokens.update(expand_query(query).lower().split())
-    for idx in range(n_chunks):
-        heading = (chunk_records[idx]["metadata"].get("heading") or "").lower()
-        if not heading:
-            continue
-        h_tokens = set(heading.split())
-        overlap = len(q_tokens & h_tokens) / max(1, len(h_tokens))
-        if overlap >= 0.5:
-            ctype = chunk_records[idx]["metadata"].get("chunk_type", "")
-            multiplier = 2.0 if ctype in ("accordion", "accordion_faq", "page") else 1.0
-            rrf[idx] += overlap * 0.08 * multiplier
+    if cfg.use_heading_boost:
+        q_tokens = set(re.sub(r"[^a-z0-9\s]", " ", query.lower()).split())
+        q_tokens.update(expand_query(query).lower().split())
+        for idx in range(n_chunks):
+            heading = (chunk_records[idx]["metadata"].get("heading") or "").lower()
+            if not heading:
+                continue
+            h_tokens = set(heading.split())
+            overlap = len(q_tokens & h_tokens) / max(1, len(h_tokens))
+            if overlap >= 0.5:
+                ctype = chunk_records[idx]["metadata"].get("chunk_type", "")
+                multiplier = 2.0 if ctype in ("accordion", "accordion_faq", "page") else 1.0
+                rrf[idx] += overlap * 0.08 * multiplier
 
     # Label boost: boost chunks whose labels match query intent
-    query_labels = _detect_query_labels(query)
-    if query_labels:
-        for idx in range(n_chunks):
-            chunk_labels = set(chunk_records[idx]["metadata"].get("labels", []))
-            if chunk_labels & query_labels:
-                rrf[idx] += 0.03
+    if cfg.use_label_boost:
+        query_labels = _detect_query_labels(query)
+        if query_labels:
+            for idx in range(n_chunks):
+                chunk_labels = set(chunk_records[idx]["metadata"].get("labels", []))
+                if chunk_labels & query_labels:
+                    rrf[idx] += 0.03
 
     # Apply soft URL penalty: each additional chunk from the same URL
     # gets a diminishing score so diverse sources surface naturally.
-    url_seen: dict[str, int] = {}
-    for rel in np.argsort(-rrf):
-        meta = chunk_records[rel]["metadata"]
-        url = _get_url(meta)
-        url_seen.setdefault(url, 0)
-        if url_seen[url] > 0:
-            rrf[rel] *= 0.9 ** url_seen[url]
-        url_seen[url] += 1
+    if cfg.use_url_penalty:
+        url_seen: dict[str, int] = {}
+        for rel in np.argsort(-rrf):
+            meta = chunk_records[rel]["metadata"]
+            url = _get_url(meta)
+            url_seen.setdefault(url, 0)
+            if url_seen[url] > 0:
+                rrf[rel] *= 0.9 ** url_seen[url]
+            url_seen[url] += 1
 
     order = np.argsort(-rrf)
     hits = []
