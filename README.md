@@ -43,6 +43,20 @@ Structure-aware chunking for accordion pages (FAQ, Course Progressions, etc.) wa
 - For **Chinese queries**, I discovered that BM25 and the cross-encoder are English-only bottlenecks — adding LLM-based translation *before* retrieval (not after) solved inconsistent results
 - **Page chunk replacement** — For broad queries like "What are the admission requirements?" the system retrieves 3+ section chunks from the same page (personal statement, recommendation letters, English proficiency, etc.), each with only partial information. When this happens, the system automatically replaces those fragments with the full page-level chunk, giving the LLM complete context to synthesize a comprehensive answer
 
+### Why LLM-based query rewriting didn't work here
+
+Users sometimes ask vague questions — e.g., "Which professor teaches AI related courses?" retrieves different chunks than the more specific "Who teaches generative AI?", leading to inconsistent answers. This is a known limitation of single-pass retrieval: different wordings produce different embeddings and different BM25 matches.
+
+I experimented with two LLM-based approaches to address this:
+
+1. **Query Rewriting** — Rewrite the user's query into a keyword-rich search query before retrieval. Result: Recall@5 dropped from 0.911 to 0.336. The rewritten queries were bloated with keywords that diluted the embedding vector (MiniLM's 384 dimensions can't encode 7 concepts at once) and weakened BM25's term discrimination.
+
+2. **HyDE (Hypothetical Document Embeddings)** — Generate a hypothetical answer with the LLM, then use its embedding for semantic search (while keeping BM25 on the original query). Result: also underperformed baseline. The LLM (Gemini) lacks specific knowledge about the UChicago ADS program, so its hypothetical answers contained fabricated details (wrong professor names, invented course titles) that pushed the embedding away from the actual documents.
+
+Both approaches share the same fundamental problem: **they inject an LLM's general knowledge into a domain-specific retrieval pipeline.** When the LLM doesn't know the domain well, its "help" is noise. The retrieval pipeline already has strong lexical signals (BM25 + synonym expansion) and a cross-encoder reranker — adding an LLM step before retrieval just introduces another source of error.
+
+For this project, the better path is improving retrieval signals directly: expanding the synonym dictionary, refining chunk boundaries, and tuning BM25/boost weights. These are deterministic and verifiable, unlike LLM-generated query transformations.
+
 ### Generation: the LLM is the easy part
 
 I migrated from OpenAI GPT to **Gemini 2.5 Flash Lite** expecting a quality tradeoff, but the results were on par — with much better latency and cost. For a domain-specific RAG where the context does most of the heavy lifting, a lighter LLM works just fine.
