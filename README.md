@@ -187,6 +187,29 @@ The career category has the lowest recall because relevant answers span multiple
 
 Each query was manually annotated by reviewing chunk text and asking: *"If the LLM only sees this chunk, can it correctly answer the question?"* Average 2.4 relevant chunks per query. Auto-annotation (using the system's own retrieval scores) was deliberately avoided to prevent circular evaluation — see "What I Learned" for details.
 
+### RAGAS: Generation Quality
+
+End-to-end evaluation using [RAGAS](https://docs.ragas.io/) on the same 55-query golden test set. The full pipeline runs for each query (retrieve → rerank → Gemini 2.5 Flash Lite generates answer), then `gemini-2.5-flash` judges faithfulness and answer relevancy (`python eval.py --mode ragas`):
+
+| Metric | Score |
+|--------|-------|
+| **Faithfulness** | **0.962** |
+| **Answer Relevancy** | **0.663** |
+
+#### Per-Category Breakdown
+
+| Category | Queries | Faithfulness | Answer Relevancy |
+|----------|---------|--------------|------------------|
+| Admission | 16 | 0.956 | 0.712 |
+| Course | 19 | 0.953 | 0.656 |
+| Fee | 7 | 1.000 | 0.514 |
+| Capstone | 6 | 0.986 | 0.810 |
+| Career | 4 | 1.000 | 0.479 |
+| Application | 2 | 0.775 | 0.621 |
+| Contact | 1 | 1.000 | 0.997 |
+
+> **Faithfulness is high (0.96)** — the LLM rarely hallucinates beyond the retrieved context. **Answer Relevancy is lower (0.66)**, primarily due to the evaluation method: RAGAS measures relevancy by generating questions from the answer and comparing embeddings back to the original query. Chinese queries score poorly (avg 0.39 vs English 0.70) because the local MiniLM embeddings used for this comparison are English-only. Short/informal queries ("GRE?", "deadline", "how much does it cost") also score low despite correct answers.
+
 ### Ablation Study
 
 Each stage adds one component to the pipeline. All evaluated on the same 55-query golden test set (`python eval.py --mode ablation`):

@@ -1,0 +1,376 @@
+{
+  "aggregate": {
+    "faithfulness": 0.9615,
+    "answer_relevancy": 0.6631,
+    "n_queries": 55
+  },
+  "per_category": {
+    "admission": {
+      "faithfulness": 0.9564,
+      "answer_relevancy": 0.7123,
+      "n": 16
+    },
+    "application": {
+      "faithfulness": 0.775,
+      "answer_relevancy": 0.6215,
+      "n": 2
+    },
+    "capstone": {
+      "faithfulness": 0.9862,
+      "answer_relevancy": 0.8102,
+      "n": 6
+    },
+    "career": {
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.4788,
+      "n": 4
+    },
+    "contact": {
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.997,
+      "n": 1
+    },
+    "course": {
+      "faithfulness": 0.9534,
+      "answer_relevancy": 0.6556,
+      "n": 19
+    },
+    "fee": {
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.5143,
+      "n": 7
+    }
+  },
+  "per_query": [
+    {
+      "query": "What are the core courses in the MS in Applied Data Science program?",
+      "category": "course",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.954
+    },
+    {
+      "query": "What is the tuition cost for the program?",
+      "category": "fee",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.736
+    },
+    {
+      "query": "What scholarships are available for the program?",
+      "category": "fee",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.773
+    },
+    {
+      "query": "What are the admission requirements for the program?",
+      "category": "admission",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.757
+    },
+    {
+      "query": "Tell me about the capstone project.",
+      "category": "capstone",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.682
+    },
+    {
+      "query": "Is the GRE or GMAT required?",
+      "category": "admission",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.789
+    },
+    {
+      "query": "When will I receive my admission decision?",
+      "category": "admission",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.678
+    },
+    {
+      "query": "What are the minimum TOEFL and IELTS scores required?",
+      "category": "admission",
+      "faithfulness": 0.8,
+      "answer_relevancy": 0.857
+    },
+    {
+      "query": "What is the difference between the online and in-person programs?",
+      "category": "course",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.398
+    },
+    {
+      "query": "How long does it take to complete the program?",
+      "category": "course",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.0
+    },
+    {
+      "query": "What is the sample full-time schedule?",
+      "category": "course",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.947
+    },
+    {
+      "query": "What is the part-time schedule like?",
+      "category": "course",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.596
+    },
+    {
+      "query": "What are the application deadlines?",
+      "category": "application",
+      "faithfulness": 0.75,
+      "answer_relevancy": 0.758
+    },
+    {
+      "query": "Is there an application fee waiver?",
+      "category": "admission",
+      "faithfulness": 1.0,
+      "answer_relevancy": 1.0
+    },
+    {
+      "query": "What is the 2-year thesis track program?",
+      "category": "course",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.817
+    },
+    {
+      "query": "How do I apply to the MBA/MS joint degree?",
+      "category": "admission",
+      "faithfulness": 0.875,
+      "answer_relevancy": 0.984
+    },
+    {
+      "query": "What noncredit foundational courses are available?",
+      "category": "course",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.616
+    },
+    {
+      "query": "What career outcomes do graduates have?",
+      "category": "career",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.625
+    },
+    {
+      "query": "Will my diploma indicate I completed the program online?",
+      "category": "course",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.853
+    },
+    {
+      "query": "Do I need to provide official transcripts?",
+      "category": "admission",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.815
+    },
+    {
+      "query": "How do online classes work? Are they synchronous or asynchronous?",
+      "category": "course",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.592
+    },
+    {
+      "query": "What is the cost of attendance beyond tuition?",
+      "category": "fee",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.555
+    },
+    {
+      "query": "Do international students need a visa to enroll in the online program?",
+      "category": "admission",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.824
+    },
+    {
+      "query": "What are some examples of past capstone projects?",
+      "category": "capstone",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.989
+    },
+    {
+      "query": "How do I become a capstone sponsor?",
+      "category": "capstone",
+      "faithfulness": 0.917,
+      "answer_relevancy": 0.965
+    },
+    {
+      "query": "What financial aid options are there for international students?",
+      "category": "fee",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.834
+    },
+    {
+      "query": "What courses do I take in Quarter 1?",
+      "category": "course",
+      "faithfulness": 0.667,
+      "answer_relevancy": 0.926
+    },
+    {
+      "query": "How do I submit my recommendation letters?",
+      "category": "admission",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.851
+    },
+    {
+      "query": "What is Machine Learning I about?",
+      "category": "course",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.714
+    },
+    {
+      "query": "Can I switch between the 1-year and 2-year programs after enrolling?",
+      "category": "course",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.81
+    },
+    {
+      "query": "What research areas does the Data Science Institute focus on?",
+      "category": "capstone",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.79
+    },
+    {
+      "query": "How many spots are available in the 2-year program?",
+      "category": "course",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.992
+    },
+    {
+      "query": "What is the thesis requirement for the 2-year program?",
+      "category": "course",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.827
+    },
+    {
+      "query": "Where do I send my TOEFL scores?",
+      "category": "admission",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.933
+    },
+    {
+      "query": "Do employers value the online degree the same as in-person?",
+      "category": "career",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.536
+    },
+    {
+      "query": "What is the Summer Lab research program?",
+      "category": "capstone",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.937
+    },
+    {
+      "query": "How do I contact the admissions team?",
+      "category": "contact",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.997
+    },
+    {
+      "query": "What are the differences between MS in Applied Data Science and MS in Data Science?",
+      "category": "course",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.0
+    },
+    {
+      "query": "Can in-person students take online courses and vice versa?",
+      "category": "course",
+      "faithfulness": 0.5,
+      "answer_relevancy": 0.528
+    },
+    {
+      "query": "What materials do I need for my application?",
+      "category": "admission",
+      "faithfulness": 0.9,
+      "answer_relevancy": 0.35
+    },
+    {
+      "query": "多少钱",
+      "category": "fee",
+      "faithfulness": 1.0,
+      "answer_relevancy": -0.003
+    },
+    {
+      "query": "这个项目要读多久",
+      "category": "course",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.569
+    },
+    {
+      "query": "怎么申请",
+      "category": "admission",
+      "faithfulness": 0.727,
+      "answer_relevancy": 0.332
+    },
+    {
+      "query": "有奖学金吗",
+      "category": "fee",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.462
+    },
+    {
+      "query": "毕业后能找到什么工作",
+      "category": "career",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.237
+    },
+    {
+      "query": "GRE?",
+      "category": "admission",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.537
+    },
+    {
+      "query": "capstone",
+      "category": "capstone",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.498
+    },
+    {
+      "query": "do I need GRE",
+      "category": "admission",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.684
+    },
+    {
+      "query": "how much does it cost",
+      "category": "fee",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.243
+    },
+    {
+      "query": "can I work while studying",
+      "category": "course",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.581
+    },
+    {
+      "query": "OPT STEM eligible?",
+      "category": "admission",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.627
+    },
+    {
+      "query": "where do graduates work",
+      "category": "career",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.517
+    },
+    {
+      "query": "线上和线下有什么区别",
+      "category": "course",
+      "faithfulness": 0.947,
+      "answer_relevancy": 0.737
+    },
+    {
+      "query": "need coding experience?",
+      "category": "admission",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.378
+    },
+    {
+      "query": "deadline",
+      "category": "application",
+      "faithfulness": 0.8,
+      "answer_relevancy": 0.485
+    }
+  ]
+}

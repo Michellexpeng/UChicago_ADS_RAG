@@ -1,19 +1,24 @@
 """
 RAG retrieval evaluation script.
 
-Supports two evaluation modes:
+Supports multiple evaluation modes:
   1. Golden test set: hand-curated queries with labeled relevant chunk_ids
   2. Pseudo-query:    sample chunks, use first sentence as query, check if source chunk is retrieved
+  3. Ablation:        progressive feature evaluation
+  4. RAGAS:           end-to-end generation quality (faithfulness & answer relevancy)
 
 Metrics:
   - Recall@K:  fraction of relevant chunks found in top-K
   - MRR:       mean reciprocal rank of the first relevant result
   - NDCG@K:    normalized discounted cumulative gain (ranking quality)
+  - Faithfulness:      RAGAS — is the answer grounded in the retrieved context?
+  - Answer Relevancy:  RAGAS — does the answer address the question?
 
 Usage:
   cd backend
   python eval.py                          # golden test set (default)
   python eval.py --mode pseudo --samples 100  # pseudo-query evaluation
+  python eval.py --mode ragas             # RAGAS generation quality eval
   python eval.py --dedup                  # evaluate with deduped chunks
 """
 
@@ -356,11 +361,179 @@ def eval_ablation(retrieve_k=20, rerank_k=10, eval_mode="golden", n_samples=100)
 
 
 # ---------------------------------------------------------------------------
+# RAGAS evaluation (end-to-end generation quality)
+# ---------------------------------------------------------------------------
+def eval_ragas(chunk_records, embedder, bm25, faiss_index, cross_enc,
+               retrieve_k=20, rerank_k=5):
+    """Evaluate generation quality using RAGAS faithfulness & answer relevancy.
+
+    Runs the full RAG pipeline (retrieve → rerank → prompt → LLM generate)
+    on the golden test set, then scores each answer with RAGAS.
+
+    Requires:
+      - GOOGLE_API_KEY environment variable
+      - ragas, langchain-google-genai, datasets packages
+    """
+    from datasets import Dataset
+    from dotenv import load_dotenv
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    from langchain_huggingface import HuggingFaceEmbeddings
+    from ragas import evaluate
+    from ragas.embeddings import LangchainEmbeddingsWrapper
+    from ragas.llms import LangchainLLMWrapper
+    from ragas.metrics import answer_relevancy, faithfulness
+
+    from prompt import build_prompt
+
+    load_dotenv()
+
+    api_key = os.getenv("GOOGLE_API_KEY", "")
+    if not api_key:
+        print("ERROR: GOOGLE_API_KEY is required for RAGAS evaluation.")
+        sys.exit(1)
+
+    golden_path = os.path.join(DATA_DIR, "golden_test_set.json")
+    if not os.path.exists(golden_path):
+        print(f"ERROR: {golden_path} not found.")
+        sys.exit(1)
+
+    with open(golden_path, "r", encoding="utf-8") as f:
+        test_set = json.load(f)
+
+    # LLM for generation
+    gen_llm = ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash-lite",
+        temperature=0.0,
+        max_output_tokens=512,
+        google_api_key=api_key,
+    )
+
+    # RAGAS judge LLM and embeddings
+    ragas_llm = LangchainLLMWrapper(ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash", temperature=0.0, google_api_key=api_key,
+    ))
+    ragas_embeddings = LangchainEmbeddingsWrapper(
+        HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    )
+
+    print(f"\n{'='*60}")
+    print(f"RAGAS Evaluation ({len(test_set)} queries)")
+    print(f"retrieve_k={retrieve_k}, rerank_k={rerank_k}")
+    print(f"Generation LLM: gemini-2.5-flash-lite")
+    print(f"Judge LLM:      gemini-2.5-flash")
+    print(f"{'='*60}\n")
+
+    questions, answers, contexts = [], [], []
+
+    for i, item in enumerate(test_set):
+        query = item["query"]
+        retrieval_query = _translate_query(query)
+
+        candidates = retrieve(retrieval_query, chunk_records, embedder, bm25, faiss_index, top_k=retrieve_k)
+        hits = rerank(retrieval_query, candidates, cross_enc, top_k=rerank_k)
+
+        prompt = build_prompt(query, hits)
+        response = gen_llm.invoke(prompt)
+        answer = response.content.strip()
+
+        context_texts = [h["text"] for h in hits]
+
+        questions.append(query)
+        answers.append(answer)
+        contexts.append(context_texts)
+
+        print(f"  [{i+1}/{len(test_set)}] {query[:55]}")
+
+    # Build RAGAS dataset and evaluate
+    ragas_dataset = Dataset.from_dict({
+        "question": questions,
+        "answer": answers,
+        "contexts": contexts,
+    })
+
+    print("\nRunning RAGAS evaluation (this may take a few minutes)...")
+    result = evaluate(
+        ragas_dataset,
+        metrics=[faithfulness, answer_relevancy],
+        llm=ragas_llm,
+        embeddings=ragas_embeddings,
+    )
+    df = result.to_pandas()
+
+    # Per-query results
+    print(f"\n{'─'*60}")
+    print("PER-QUERY RESULTS:")
+    for idx, row in df.iterrows():
+        q = questions[idx][:50]
+        f_score = row.get("faithfulness", float("nan"))
+        r_score = row.get("answer_relevancy", float("nan"))
+        print(f"  {q:<50}  faith={f_score:.3f}  rel={r_score:.3f}")
+
+    # Aggregate
+    faith_mean = df["faithfulness"].mean()
+    relevancy_mean = df["answer_relevancy"].mean()
+
+    print(f"\n{'─'*60}")
+    print("AGGREGATE RESULTS:")
+    print(f"  Faithfulness:      {faith_mean:.4f}")
+    print(f"  Answer Relevancy:  {relevancy_mean:.4f}")
+    print(f"  Queries evaluated: {len(test_set)}")
+
+    # Per-category breakdown
+    categories = [item.get("category", "unknown") for item in test_set]
+    df["category"] = categories
+    cat_groups = df.groupby("category")[["faithfulness", "answer_relevancy"]].mean()
+    cat_counts = df.groupby("category").size()
+
+    print(f"\n{'─'*60}")
+    print("PER-CATEGORY BREAKDOWN:")
+    for cat in sorted(cat_groups.index):
+        f_val = cat_groups.loc[cat, "faithfulness"]
+        r_val = cat_groups.loc[cat, "answer_relevancy"]
+        n = cat_counts[cat]
+        print(f"  {cat:<20} (n={n:>2})  faith={f_val:.3f}  rel={r_val:.3f}")
+
+    # Save results to JSON
+    output = {
+        "aggregate": {
+            "faithfulness": round(faith_mean, 4),
+            "answer_relevancy": round(relevancy_mean, 4),
+            "n_queries": len(test_set),
+        },
+        "per_category": {
+            cat: {
+                "faithfulness": round(cat_groups.loc[cat, "faithfulness"], 4),
+                "answer_relevancy": round(cat_groups.loc[cat, "answer_relevancy"], 4),
+                "n": int(cat_counts[cat]),
+            }
+            for cat in sorted(cat_groups.index)
+        },
+        "per_query": [
+            {
+                "query": questions[i],
+                "category": categories[i],
+                "faithfulness": round(float(df.iloc[i]["faithfulness"]), 4),
+                "answer_relevancy": round(float(df.iloc[i]["answer_relevancy"]), 4),
+                "answer": answers[i],
+            }
+            for i in range(len(questions))
+        ],
+    }
+
+    out_path = os.path.join(DATA_DIR, "ragas_eval_results.json")
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(output, f, indent=2, ensure_ascii=False)
+    print(f"\nResults saved to {out_path}")
+
+    return output
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="RAG retrieval evaluation")
-    parser.add_argument("--mode", choices=["golden", "pseudo", "both", "ablation"], default="both",
+    parser.add_argument("--mode", choices=["golden", "pseudo", "both", "ablation", "ragas"], default="both",
                         help="Evaluation mode (default: both)")
     parser.add_argument("--dedup", action="store_true",
                         help="Use deduplicated chunks")
@@ -378,6 +551,11 @@ def main():
         return
 
     chunk_records, embedder, bm25, faiss_index, cross_enc = load_resources(dedup=args.dedup)
+
+    if args.mode == "ragas":
+        eval_ragas(chunk_records, embedder, bm25, faiss_index, cross_enc,
+                   retrieve_k=args.retrieve_k, rerank_k=args.rerank_k)
+        return
     print(f"\nChunks loaded: {len(chunk_records)}")
 
     if args.mode in ("golden", "both"):
