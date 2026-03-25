@@ -273,7 +273,7 @@ backend/
   retrieval.py         # Hybrid retrieval (BM25 + FAISS + RRF), reranking, boosting
   prompt.py            # Prompt construction, query translation, citation parsing
   onnx_models.py       # ONNX Runtime inference wrappers (embedder + cross-encoder)
-  eval.py              # Golden test set evaluation (Recall@K, MRR, NDCG)
+  eval.py              # Evaluation: Recall@K, MRR, NDCG, RAGAS (faithfulness & relevancy)
   requirements.txt
   Dockerfile           # Backend container (Cloud Run)
   .env.example         # Environment variable template
@@ -282,15 +282,18 @@ backend/
     embeddings_dedup.npy            # MiniLM embeddings (1012 x 384)
     uchicago_ads_faiss_dedup.index  # FAISS index (MiniLM, deduped)
     golden_test_set.json            # 55 manually-annotated evaluation queries
+    ragas_eval_results.json         # RAGAS evaluation results (per-query scores + answers)
     uchicago_ads_pages_depth3.json  # Raw crawled pages (147 pages)
   models/                           # Pre-exported ONNX models (not in git, baked into Docker)
     minilm_embedder.onnx            # MiniLM-L6-v2 embedding model (87MB)
     cross_encoder.onnx              # ms-marco-MiniLM-L-6-v2 reranker (87MB)
   notebooks/
-    rag_pipeline.ipynb              # Early-stage pipeline exploration (historical)
+    rag_pipeline.ipynb              # Early-stage pipeline exploration (web crawl is here!)
+    rag_pipeline_updated.ipynb      # Updated pipeline walkthrough
     debug_pipeline.ipynb            # Step-by-step retrieval pipeline debugger
     test_chunking.ipynb             # Chunking validation across page types
     embedding_comparison.ipynb      # MiniLM vs BGE-M3 vs E5 vs Gemini comparison
+    ab_test_query_rewrite.ipynb     # A/B test for query rewrite and HyDE
   scripts/
     prepare_chunks.py               # Full pipeline: label → chunk → dedup → embed → index
 
