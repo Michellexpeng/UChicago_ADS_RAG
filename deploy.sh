@@ -70,6 +70,27 @@ firebase deploy --only hosting --project "$PROJECT_ID"
 
 cd ..
 
+echo "=========================================="
+echo "Step 5: Setting up Cloud Scheduler keepalive..."
+echo "=========================================="
+# Ping /health every 5 minutes to avoid cold starts (instead of min-instances=1)
+if gcloud scheduler jobs describe rag-keepalive --project "$PROJECT_ID" --location "$REGION" &>/dev/null; then
+  gcloud scheduler jobs update http rag-keepalive \
+    --project "$PROJECT_ID" \
+    --location "$REGION" \
+    --schedule="*/5 * * * *" \
+    --uri="$BACKEND_URL/health" \
+    --http-method=GET
+else
+  gcloud scheduler jobs create http rag-keepalive \
+    --project "$PROJECT_ID" \
+    --location "$REGION" \
+    --schedule="*/5 * * * *" \
+    --uri="$BACKEND_URL/health" \
+    --http-method=GET
+fi
+echo "Keepalive scheduler: every 5 min → $BACKEND_URL/health"
+
 echo ""
 echo "=========================================="
 echo "Deployment complete!"
