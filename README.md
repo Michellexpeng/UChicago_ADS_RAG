@@ -11,6 +11,8 @@ A RAG-based Q&A system for the University of Chicago's MS in Applied Data Scienc
 
 **Live Demo:** https://uchicago-ads-rag.web.app
 
+**Interactive Course:** [How This RAG System Works](https://michellexpeng.github.io/UChicago_ADS_RAG/course.html) — an interactive single-page course that explains the entire pipeline visually, for non-technical readers.
+
 <img width="1512" height="860" alt="image" src="https://github.com/user-attachments/assets/176099db-dc1e-4562-9a4f-a6b28ffdfe36" />
 
 ---
